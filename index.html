@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#141537">
+<title>봉고캣 모바일 · 잠금화면</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div id="lockscreen">
+  <div id="sky">
+    <div class="stars"></div>
+    <div class="moon"></div>
+  </div>
+
+  <div id="clock-wrap">
+    <div id="clock-time">00:00</div>
+    <div id="clock-date">-</div>
+  </div>
+
+  <div id="coin-badge" title="코인">🪙 <span id="coin-count">0</span></div>
+
+  <div id="toast-area"></div>
+
+  <div id="cat-field"></div>
+  <div id="ground"></div>
+
+  <button id="swipe-hint" type="button">
+    <span class="chev">︿</span>
+    봉고캣 꾸미기 · 친구 · 장터
+  </button>
+</div>
+
+<!-- 하단 시트 -->
+<div id="sheet-backdrop" hidden></div>
+<div id="sheet" hidden>
+  <div id="sheet-grip"></div>
+  <nav id="sheet-tabs">
+    <button class="tab active" data-tab="dress">🎩 꾸미기</button>
+    <button class="tab" data-tab="friends">👥 친구</button>
+    <button class="tab" data-tab="market">🛒 장터</button>
+  </nav>
+  <div id="sheet-body">
+    <section id="tab-dress" class="tab-panel active"></section>
+    <section id="tab-friends" class="tab-panel"></section>
+    <section id="tab-market" class="tab-panel"></section>
+  </div>
+</div>
+
+<script src="js/app.js"></script>
+<script>
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+}
+</script>
+</body>
+</html>

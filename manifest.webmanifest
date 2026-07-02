@@ -1,0 +1,13 @@
+{
+  "name": "봉고캣 모바일",
+  "short_name": "봉고캣",
+  "description": "잠금화면에서 친구들의 고양이와 함께하는 방치형 봉고캣",
+  "start_url": ".",
+  "display": "fullscreen",
+  "orientation": "portrait",
+  "background_color": "#141537",
+  "theme_color": "#141537",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
