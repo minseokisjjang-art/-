@@ -1,9 +1,11 @@
-const CACHE = 'bongo-cat-mobile-v1';
+const CACHE = 'bongo-cat-mobile-v2';
 const ASSETS = [
   '.',
   'index.html',
   'css/style.css',
   'js/app.js',
+  'js/multiplayer.js',
+  'js/vendor/mqtt.min.js',
   'manifest.webmanifest',
   'icon.svg',
 ];

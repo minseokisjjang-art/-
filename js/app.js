@@ -53,6 +53,7 @@ const DEFAULT_STATE = {
   inv: { 'skin-white': 1 },                 // itemId → 보유 개수
   equipped: { hat: null, skin: 'skin-white' },
   presets: [],                              // {name, hat, skin}
+  playerName: '집사' + Math.floor(10 + Math.random() * 90),
   friends: [
     { id: 'f1', name: '민지', skin: 'skin-cream', hat: 'hat-ribbon', on: true },
     { id: 'f2', name: '준호', skin: 'skin-gray',  hat: 'hat-cap',    on: true },
@@ -169,6 +170,10 @@ class Cat {
     const t = this.el.querySelector('.tname');
     if (this.cfg.isMe) {
       t.textContent = '내 봉고캣';
+    } else if (this.cfg.remote) {
+      t.textContent = this.friendActive
+        ? `${this.cfg.name} · 폰 사용 중 ⌨️`
+        : `${this.cfg.name} · 접속 중 🟢`;
     } else {
       t.textContent = this.friendActive
         ? `${this.cfg.name} · 타이핑 중 ⌨️`
@@ -264,7 +269,9 @@ class Cat {
     const now = performance.now();
     if (now - this.lastBubble < 350) return;
     this.lastBubble = now;
-    this.showBubble(emoji || pick(this.cfg.isMe ? myEmojiPool() : BASE_EMOJI));
+    const chosen = emoji || pick(this.cfg.isMe ? myEmojiPool() : BASE_EMOJI);
+    this.showBubble(chosen);
+    if (this.cfg.isMe && MP.inRoom()) MP.emote(chosen);   // 친구 화면의 내 고양이도 반응
     this.el.classList.remove('jump');
     void this.el.offsetWidth;                 // 애니메이션 리트리거
     this.el.classList.add('jump');
@@ -314,8 +321,10 @@ let myCat;
 function buildCats() {
   cats.length = 0;
   field.innerHTML = '';
-  const visibleFriends = state.friends.filter(f => f.on);
-  const total = 1 + visibleFriends.length;
+  // 실시간 방에 들어가면 데모 친구 대신 진짜 멤버들의 고양이가 나온다
+  const visibleFriends = MP.inRoom() ? [] : state.friends.filter(f => f.on);
+  const remotes = MP.inRoom() ? MP.members() : [];
+  const total = 1 + visibleFriends.length + remotes.length;
   myCat = new Cat({
     id: 'me', name: '나', isMe: true,
     skin: state.equipped.skin, hat: state.equipped.hat, lane: 10,
@@ -327,6 +336,46 @@ function buildCats() {
       id: f.id, name: f.name, skin: f.skin, hat: f.hat,
       lane: 34 + i * 26, slot: i + 1, slotCount: total,
     }));
+  });
+  remotes.forEach((m, i) => {
+    const c = new Cat({
+      id: m.id, name: m.name, skin: m.skin, hat: m.hat, remote: true,
+      lane: 34 + i * 26, slot: i + 1, slotCount: total,
+    });
+    c.friendActive = m.active;
+    c.updateTag();
+    cats.push(c);
+  });
+}
+
+/* 실시간 멤버 목록 변화를 고양이 필드에 반영 */
+function syncRemoteCats() {
+  const ms = MP.inRoom() ? MP.members() : [];
+  // 나간 멤버의 고양이 제거
+  for (const c of [...cats]) {
+    if (c.cfg.remote && !ms.some(m => m.id === c.cfg.id)) {
+      c.el.remove();
+      cats.splice(cats.indexOf(c), 1);
+    }
+  }
+  ms.forEach((m, i) => {
+    const c = cats.find(x => x.cfg.id === m.id);
+    if (!c) {
+      const nc = new Cat({
+        id: m.id, name: m.name, skin: m.skin, hat: m.hat, remote: true,
+        lane: 34 + (i % 4) * 22, slot: i + 1, slotCount: ms.length + 1,
+      });
+      nc.friendActive = m.active;
+      nc.updateTag();
+      cats.push(nc);
+      toastMsg(`<b>${m.name}</b>의 고양이가 놀러왔어요! 🎉`);
+    } else {
+      c.cfg.name = m.name;
+      c.cfg.skin = m.skin;
+      c.cfg.hat = m.hat;
+      c.applyLook();
+      c.updateTag();
+    }
   });
 }
 
@@ -344,7 +393,7 @@ function loop(now) {
 function simulateFriends() {
   setInterval(() => {
     for (const cat of cats) {
-      if (cat.cfg.isMe) continue;
+      if (cat.cfg.isMe || cat.cfg.remote) continue;   // 진짜 친구는 실제 신호로만 움직인다
       if (Math.random() < .3) {
         cat.friendActive = !cat.friendActive;
         cat.updateTag();
@@ -357,11 +406,77 @@ function simulateFriends() {
   }, 4000);
 }
 
-/* 내가 화면을 만지면 내 고양이가 봉고를 두드림 (PC판 키 입력의 모바일 번역) */
+/* 내가 화면을 만지면 내 고양이가 봉고를 두드림 (PC판 키 입력의 모바일 번역)
+   방에 있으면 "사용 중" 신호를 친구들에게 전파 — 시작/종료 시에만 전송해 트래픽 최소화 */
+let mpActive = false;
+let mpIdleTimer = null;
+
+function noteMyActivity() {
+  myCat.setMode('bongo', 2);
+  if (!MP.inRoom()) return;
+  if (!mpActive) { mpActive = true; MP.activity(true); }
+  clearTimeout(mpIdleTimer);
+  mpIdleTimer = setTimeout(() => { mpActive = false; MP.activity(false); }, 6000);
+}
+
 $('#lockscreen').addEventListener('pointerdown', e => {
   if (e.target.closest('.cat') || e.target.closest('button')) return;
-  myCat.setMode('bongo', 2);
+  noteMyActivity();
 });
+
+/* ── 실시간 방 연결 ──────────────────────────────────── */
+
+const MP_HANDLERS = {
+  getName: () => state.playerName,
+  getOutfit: () => ({ hat: state.equipped.hat, skin: state.equipped.skin }),
+  onMembers: () => { syncRemoteCats(); renderFriends(); },
+  onActivity: (id, active) => {
+    const c = cats.find(x => x.cfg.id === id);
+    if (!c) return;
+    c.friendActive = active;
+    c.updateTag();
+    if (active) c.setMode('bongo', 3);
+  },
+  onEmote: (id, emoji) => {
+    const c = cats.find(x => x.cfg.id === id);
+    if (c) c.tapReact(emoji);
+  },
+  onStatus: s => {
+    if (s === 'connected') {
+      toastMsg(`방 <b>${MP.roomCode()}</b>에 연결됐어요! 친구를 기다리는 중… 📡`);
+      buildCats();
+      renderFriends();
+    } else if (s === 'error') {
+      toastMsg('연결에 실패했어요. 잠시 후 다시 시도해주세요 😿');
+      MP.leave();
+      renderFriends();
+    } else if (s === 'left') {
+      buildCats();
+      renderFriends();
+    }
+  },
+};
+
+function joinRoom(code) {
+  MP.join(code, MP_HANDLERS);
+  renderFriends();
+}
+
+function shareRoomLink() {
+  const url = location.origin + location.pathname + '?room=' + MP.roomCode();
+  const text = `봉고캣 모바일에서 함께해요! 🐱\n${url}`;
+  if (navigator.share) {
+    navigator.share({ text, url }).catch(() => {});
+  } else {
+    navigator.clipboard?.writeText(text).then(
+      () => toastMsg('초대 링크를 복사했어요. 친구에게 붙여넣기 하세요 📋'),
+      () => toastMsg(`초대 링크: ${url}`));
+  }
+}
+
+/* 초대 링크(?room=CODE)로 들어온 경우 자동 참가 */
+const urlRoom = new URLSearchParams(location.search).get('room');
+if (urlRoom) setTimeout(() => joinRoom(urlRoom), 800);
 
 /* ── 아이템 드랍 (가챠) ──────────────────────────────── */
 
@@ -533,8 +648,11 @@ function renderDress() {
       myCat.applyLook();
       myCat.tapReact('✨');
       renderDress();
-      // PC판처럼: 내 새 아이템은 친구 화면에도 즉시 반영 (데모에서는 안내만)
-      toastMsg('친구들 화면의 내 고양이에도 바로 적용됐어요 ✨');
+      // PC판처럼: 내 새 아이템은 친구 화면에도 즉시 반영
+      if (MP.inRoom()) {
+        MP.outfit();
+        toastMsg('친구들 화면의 내 고양이에도 바로 적용됐어요 ✨');
+      }
     });
   });
 
@@ -559,6 +677,7 @@ function renderDress() {
       myCat.cfg.hat = state.equipped.hat;
       myCat.cfg.skin = state.equipped.skin;
       myCat.applyLook();
+      if (MP.inRoom()) MP.outfit();
       renderDress();
     }));
 
@@ -572,86 +691,104 @@ function renderDress() {
 
 /* ── 친구 탭 ─────────────────────────────────────────── */
 
-let inviteCode = null;
-
 function renderFriends() {
-  const rows = state.friends.map(f => {
-    const cat = cats.find(c => c.cfg.id === f.id);
-    const status = !f.on ? '내 화면에서 숨김'
-      : cat && cat.friendActive ? '지금 열심히 타이핑 중 ⌨️' : '휴식 중 💤';
-    return `<div class="row">
-      <span class="r-emoji">${f.hat ? byId(f.hat).emoji : '🐱'}</span>
+  const inRoom = MP.inRoom();
+
+  let liveSection;
+  if (inRoom) {
+    const memberRows = MP.members().map(m => `<div class="row">
+      <span class="r-emoji">${m.hat ? byId(m.hat).emoji : '🐱'}</span>
       <div class="r-main">
-        <div class="r-title">${f.name}의 봉고캣</div>
-        <div class="r-sub">${status}</div>
+        <div class="r-title">${m.name}</div>
+        <div class="r-sub">${m.active ? '지금 폰 사용 중 ⌨️' : '접속 중 🟢'}</div>
       </div>
-      <button class="btn" data-friend-toggle="${f.id}">${f.on ? '숨기기' : '보이기'}</button>
-      <button class="btn primary" data-friend-emo="${f.id}" ${f.on ? '' : 'disabled'}>👋 인사</button>
-    </div>`;
-  }).join('') || '<p class="hint-text">아직 친구가 없어요. 아래에서 초대해보세요!</p>';
+      <button class="btn primary" data-wave="${m.id}">👋 인사</button>
+    </div>`).join('')
+      || '<p class="hint-text">아직 아무도 없어요. 아래 버튼으로 초대 링크를 보내보세요!</p>';
+
+    liveSection = `
+      <div class="sec-title">📡 우리 방 <span style="opacity:.5;font-weight:400">${MP.isConnected() ? '연결됨' : '연결 중…'}</span></div>
+      <div class="invite-code">${MP.roomCode()}</div>
+      <button class="btn primary wide" id="share-room">📤 초대 링크 보내기 (카톡 등)</button>
+      <div class="sec-title">👥 함께 있는 친구들</div>
+      <div class="row-list">${memberRows}</div>
+      <button class="btn danger wide" id="leave-room">방 나가기</button>`;
+  } else {
+    liveSection = `
+      <div class="sec-title">📡 실시간 함께하기</div>
+      <p class="hint-text">방을 만들어 초대 링크를 보내면, 친구의 고양이가 <b>진짜로</b> 내 화면에
+      나타나요. 친구가 폰을 만지는 동안 친구 고양이가 실시간으로 봉고를 두드립니다.</p>
+      <button class="btn primary wide" id="create-room">🏠 새 방 만들기</button>
+      <div class="sec-title">🔑 초대 코드로 참가</div>
+      <div class="friend-input">
+        <input id="join-code" placeholder="코드 5자리 입력 (예: AB3CD)" maxlength="5"
+          autocapitalize="characters" autocomplete="off">
+        <button class="btn primary" id="join-room">참가</button>
+      </div>`;
+  }
+
+  const demoSection = inRoom ? '' : (() => {
+    const rows = state.friends.map(f => {
+      const cat = cats.find(c => c.cfg.id === f.id);
+      const status = !f.on ? '내 화면에서 숨김'
+        : cat && cat.friendActive ? '지금 열심히 타이핑 중 ⌨️' : '휴식 중 💤';
+      return `<div class="row">
+        <span class="r-emoji">${f.hat ? byId(f.hat).emoji : '🐱'}</span>
+        <div class="r-main">
+          <div class="r-title">${f.name}의 봉고캣</div>
+          <div class="r-sub">${status}</div>
+        </div>
+        <button class="btn" data-friend-toggle="${f.id}">${f.on ? '숨기기' : '보이기'}</button>
+      </div>`;
+    }).join('');
+    return `
+      <div class="sec-title">🤖 데모 친구 <span style="opacity:.5;font-weight:400">— 혼자일 때 심심하지 않게</span></div>
+      <div class="row-list">${rows}</div>
+      <p class="hint-text">데모 친구는 가상의 고양이예요. 실시간 방에 들어가면 진짜 친구들로 바뀝니다.</p>`;
+  })();
 
   $('#tab-friends').innerHTML = `
-    <p class="hint-text">친구를 초대하면 내 잠금화면에 친구의 고양이가 함께 살아요.
-    친구가 폰이나 PC를 쓰는 동안 친구 고양이가 실시간으로 봉고를 두드려요 —
-    말 없이도 "지금 함께 있다"는 느낌을 받아보세요.</p>
-    <div class="sec-title">👥 내 친구들</div>
-    <div class="row-list">${rows}</div>
-    <div class="sec-title">✉️ 친구 초대</div>
-    <div class="invite-code" id="invite-code">${inviteCode || '·····'}</div>
-    <button class="btn primary wide" id="gen-code">${inviteCode ? '초대 코드 복사' : '초대 코드 만들기'}</button>
-    <div class="sec-title">🔑 코드로 친구 추가 (데모)</div>
+    <div class="sec-title">🏷️ 내 이름 <span style="opacity:.5;font-weight:400">— 친구 화면에 표시돼요</span></div>
     <div class="friend-input">
-      <input id="friend-name" placeholder="친구 이름 입력" maxlength="8">
-      <button class="btn primary" id="add-friend">추가</button>
+      <input id="player-name" value="${state.playerName}" maxlength="8">
+      <button class="btn" id="save-name">저장</button>
     </div>
-    <p class="hint-text">※ 프로토타입에서는 친구 활동이 시뮬레이션됩니다. 실제 서비스는 WebSocket으로
-    친구의 입력 신호를 실시간 동기화합니다. (README 로드맵 참고)</p>`;
+    ${liveSection}
+    ${demoSection}`;
 
-  $('#gen-code').addEventListener('click', () => {
-    if (!inviteCode) {
-      inviteCode = Array.from({ length: 5 }, () => pick([...'ABCDEFGHJKMNPQRSTUVWXYZ23456789'])).join('');
-      renderFriends();
-      return;
-    }
-    navigator.clipboard?.writeText(`봉고캣 모바일에서 함께해요! 초대 코드: ${inviteCode}`).then(
-      () => toastMsg('초대 코드를 복사했어요 📋'),
-      () => toastMsg(`초대 코드: ${inviteCode}`));
-  });
-
-  $('#add-friend').addEventListener('click', () => {
-    const name = $('#friend-name').value.trim();
-    if (!name) return;
-    if (state.friends.length >= 5) { toastMsg('친구는 5명까지 함께할 수 있어요.'); return; }
-    state.friends.push({
-      id: 'f' + Date.now(),
-      name,
-      skin: pick(CATALOG.filter(i => i.type === 'skin')).id,
-      hat: Math.random() < .7 ? pick(CATALOG.filter(i => i.type === 'hat')).id : null,
-      on: true,
-    });
+  $('#save-name').addEventListener('click', () => {
+    const n = $('#player-name').value.trim();
+    if (!n) return;
+    state.playerName = n;
     save();
-    buildCats();
-    renderFriends();
-    toastMsg(`${name}의 고양이가 놀러왔어요! 🎉`);
+    if (MP.inRoom()) MP.outfit();   // 이름은 모든 메시지에 실려 자연 전파됨
+    toastMsg(`이제 친구들에게 <b>${n}</b>(으)로 보여요!`);
   });
 
-  $('#tab-friends').querySelectorAll('[data-friend-toggle]').forEach(b =>
-    b.addEventListener('click', () => {
-      const f = state.friends.find(x => x.id === b.dataset.friendToggle);
-      f.on = !f.on;
-      save();
-      buildCats();
-      renderFriends();
-    }));
-
-  $('#tab-friends').querySelectorAll('[data-friend-emo]').forEach(b =>
-    b.addEventListener('click', () => {
-      const cat = cats.find(c => c.cfg.id === b.dataset.friendEmo);
-      if (!cat) return;
-      closeSheet();
-      myCat.tapReact('👋');
-      setTimeout(() => cat.tapReact(pick(['👋', '❤️', '😸'])), 700);
-    }));
+  if (inRoom) {
+    $('#share-room').addEventListener('click', shareRoomLink);
+    $('#leave-room').addEventListener('click', () => MP.leave());
+    $('#tab-friends').querySelectorAll('[data-wave]').forEach(b =>
+      b.addEventListener('click', () => {
+        closeSheet();
+        myCat.tapReact('👋');
+      }));
+  } else {
+    $('#create-room').addEventListener('click', () => joinRoom(MP.newCode()));
+    $('#join-room').addEventListener('click', () => {
+      const code = $('#join-code').value.trim();
+      if (code.length < 4) { toastMsg('코드 5자리를 입력해주세요.'); return; }
+      joinRoom(code);
+    });
+    $('#tab-friends').querySelectorAll('[data-friend-toggle]').forEach(b =>
+      b.addEventListener('click', () => {
+        const f = state.friends.find(x => x.id === b.dataset.friendToggle);
+        f.on = !f.on;
+        save();
+        buildCats();
+        renderFriends();
+      }));
+  }
 }
 
 /* ── 장터 탭 ─────────────────────────────────────────── */
