@@ -9,7 +9,13 @@
      outfit   꾸미기 변경 즉시 반영
      activity 화면 사용 시작/종료 (엣지 트리거 → 상대 화면에서 봉고 연주)
      emote    이모티콘 (상대 화면의 내 고양이가 말풍선을 띄움)
+     pet      친구 고양이 쓰다듬기 (target에게만 의미 있음)
      bye      퇴장 (MQTT last-will로 비정상 종료도 커버)
+
+   부재중 흔적(trace): 자리 비운 친구의 고양이를 쓰다듬으면
+   retained 메시지로 개인 우편함 토픽에 남겨두고, 친구가
+   돌아왔을 때 수신 → 처리 후 비운다. (답장 없는 안부)
+     room/{코드}/mail/{받는이}/{보낸이}
    ═══════════════════════════════════════════════════════ */
 
 'use strict';
@@ -89,7 +95,8 @@ const MP = (() => {
     }, 10000);
 
     client.on('connect', () => {
-      client.subscribe(topic(), err => {
+      const mailFilter = `${TOPIC_PREFIX}${room}/mail/${myId}/+`;
+      client.subscribe([topic(), mailFilter], err => {
         if (err) { handlers.onStatus('error'); return; }
         connected = true;
         clearTimeout(failTimer);
@@ -99,6 +106,7 @@ const MP = (() => {
     });
 
     client.on('message', (t, buf) => {
+      if (t.includes('/mail/')) { handleTrace(t, buf); return; }
       let msg;
       try { msg = JSON.parse(buf.toString()); } catch { return; }
       if (!msg || typeof msg !== 'object' || msg.from === myId) return;
@@ -159,7 +167,20 @@ const MP = (() => {
           handlers.onEmote(m.id, msg.emoji);
         }
         break;
+      case 'pet':
+        if (msg.target === myId && handlers.onPet) handlers.onPet(m);
+        break;
     }
+  }
+
+  /* 부재중 흔적 수신 — 처리한 뒤 retained 메시지를 비운다 */
+  function handleTrace(t, buf) {
+    if (!buf.length) return;   // 비우기 메시지
+    let msg;
+    try { msg = JSON.parse(buf.toString()); } catch { return; }
+    if (!msg || msg.type !== 'trace' || msg.from === myId) return;
+    if (handlers.onTrace) handlers.onTrace(msg);
+    client.publish(t, '', { retain: true });
   }
 
   function leave(silent) {
@@ -187,6 +208,14 @@ const MP = (() => {
     activity: active => publish('activity', { active }),
     emote: emoji => publish('emote', { emoji }),
     outfit: () => publish('outfit', myOutfit()),
+    pet: targetId => publish('pet', { target: targetId }),
+    trace: (targetId, kind) => {
+      if (!client || !room) return;
+      client.publish(`${TOPIC_PREFIX}${room}/mail/${targetId}/${myId}`,
+        JSON.stringify({ type: 'trace', kind, from: myId, name: handlers.getName(), t: Date.now() }),
+        { retain: true });
+    },
+    isOnline: id => members.has(id),
     newCode: () =>
       Array.from({ length: 5 }, () =>
         'ABCDEFGHJKMNPQRSTUVWXYZ23456789'[Math.floor(Math.random() * 31)]).join(''),

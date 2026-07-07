@@ -225,6 +225,9 @@ button { font-family: inherit; }
   100% { transform: translateY(0) scale(1); }
 }
 
+/* 자리 비운 친구 고양이 — 은은하게 */
+.cat.away { opacity: .82; filter: saturate(.55); }
+
 /* 쓰다듬기: 부르르 */
 .cat.purring { filter: brightness(1.12); }
 .cat.purring .catsvg { animation: purr .14s linear infinite !important; }

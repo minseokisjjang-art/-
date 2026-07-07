@@ -54,6 +54,9 @@ const DEFAULT_STATE = {
   equipped: { hat: null, skin: 'skin-white' },
   presets: [],                              // {name, hat, skin}
   playerName: '집사' + Math.floor(10 + Math.random() * 90),
+  guestbook: [],   // 방명록: {name, kind, t, count}
+  rosters: {},     // 방별 주민 명부: {코드: {id: {name, hat, skin, lastSeen}}}
+  lastRoom: null,  // 마지막 방 — 앱 재실행 시 자동 재입장
   friends: [
     { id: 'f1', name: '민지', skin: 'skin-cream', hat: 'hat-ribbon', on: true },
     { id: 'f2', name: '준호', skin: 'skin-gray',  hat: 'hat-cap',    on: true },
@@ -75,6 +78,33 @@ function save() { localStorage.setItem(SAVE_KEY, JSON.stringify(state)); }
 const $ = sel => document.querySelector(sel);
 const rand = (a, b) => a + Math.random() * (b - a);
 const pick = arr => arr[Math.floor(Math.random() * arr.length)];
+
+function relTime(t) {
+  const s = Math.floor((Date.now() - t) / 1000);
+  if (s < 60) return '방금';
+  if (s < 3600) return Math.floor(s / 60) + '분 전';
+  if (s < 86400) return Math.floor(s / 3600) + '시간 전';
+  if (s < 172800) return '어제';
+  return Math.floor(s / 86400) + '일 전';
+}
+
+/* 방명록 — 같은 사람의 같은 흔적이 10분 안에 반복되면 횟수만 올린다 */
+function addGuestbook(name, kind, t = Date.now()) {
+  const last = state.guestbook[0];
+  if (last && last.name === name && last.kind === kind && t - last.t < 600000) {
+    last.count = (last.count || 1) + 1;
+    last.t = t;
+  } else {
+    state.guestbook.unshift({ name, kind, t, count: 1 });
+    state.guestbook = state.guestbook.slice(0, 30);
+  }
+  save();
+}
+
+function roomRoster() {
+  if (!MP.inRoom()) return {};
+  return state.rosters[MP.roomCode()] || {};
+}
 
 function myEmojiPool() {
   const pool = [...BASE_EMOJI];
@@ -171,9 +201,11 @@ class Cat {
     if (this.cfg.isMe) {
       t.textContent = '내 봉고캣';
     } else if (this.cfg.remote) {
-      t.textContent = this.friendActive
-        ? `${this.cfg.name} · 폰 사용 중 ⌨️`
-        : `${this.cfg.name} · 접속 중 🟢`;
+      t.textContent = this.away
+        ? `${this.cfg.name} · 자리 비움 💤`
+        : this.friendActive
+          ? `${this.cfg.name} · 폰 사용 중 ⌨️`
+          : `${this.cfg.name} · 접속 중 🟢`;
     } else {
       t.textContent = this.friendActive
         ? `${this.cfg.name} · 타이핑 중 ⌨️`
@@ -191,6 +223,12 @@ class Cat {
 
   think(now) {
     if (now < this.modeUntil) return;
+    // 자리 비운 친구의 고양이는 얌전히 지낸다 (동물의 숲 이웃처럼)
+    if (this.cfg.remote && this.away) {
+      if (Math.random() < .85) this.setMode('idle', rand(3, 7));
+      else { this.dir = Math.random() < .5 ? -1 : 1; this.setMode('walk', rand(1, 2)); }
+      return;
+    }
     // 친구가 "타이핑 중"이면 주로 봉고를 두드린다 (PC판의 입력 실시간 시각화)
     if (!this.cfg.isMe && this.friendActive && Math.random() < .75) {
       this.setMode('bongo', rand(2, 5));
@@ -249,6 +287,7 @@ class Cat {
         this.el.classList.remove('purring');
         this.setMode('idle', 1);
         addCoins(1, false);   // 쓰다듬어주면 코인 +1
+        if (this.cfg.remote) this.sendPetToFriend();   // 친구에게 답장 없는 안부 전달
       }
     };
 
@@ -263,6 +302,17 @@ class Cat {
     });
     this.el.addEventListener('pointercancel', stop);
     this.el.addEventListener('pointerleave', () => { if (!purring) { clearTimeout(holdTimer); holdTimer = null; } });
+  }
+
+  /* 친구 고양이 쓰다듬기 전달 — 접속 중이면 실시간, 자리 비움이면 부재중 흔적 */
+  sendPetToFriend() {
+    if (!MP.inRoom()) return;
+    const now = Date.now();
+    if (this.lastPetSent && now - this.lastPetSent < 10000) return;   // 스팸 방지
+    this.lastPetSent = now;
+    if (MP.isOnline(this.cfg.id)) MP.pet(this.cfg.id);
+    else MP.trace(this.cfg.id, 'pet');
+    this.showBubble('💗');
   }
 
   tapReact(emoji) {
@@ -323,8 +373,7 @@ function buildCats() {
   field.innerHTML = '';
   // 실시간 방에 들어가면 데모 친구 대신 진짜 멤버들의 고양이가 나온다
   const visibleFriends = MP.inRoom() ? [] : state.friends.filter(f => f.on);
-  const remotes = MP.inRoom() ? MP.members() : [];
-  const total = 1 + visibleFriends.length + remotes.length;
+  const total = 1 + visibleFriends.length + (MP.inRoom() ? Object.keys(roomRoster()).length : 0);
   myCat = new Cat({
     id: 'me', name: '나', isMe: true,
     skin: state.equipped.skin, hat: state.equipped.hat, lane: 10,
@@ -337,45 +386,47 @@ function buildCats() {
       lane: 34 + i * 26, slot: i + 1, slotCount: total,
     }));
   });
-  remotes.forEach((m, i) => {
-    const c = new Cat({
-      id: m.id, name: m.name, skin: m.skin, hat: m.hat, remote: true,
-      lane: 34 + i * 26, slot: i + 1, slotCount: total,
-    });
-    c.friendActive = m.active;
-    c.updateTag();
-    cats.push(c);
-  });
+  syncRemoteCats();
 }
 
-/* 실시간 멤버 목록 변화를 고양이 필드에 반영 */
+/* 실시간 멤버 + 주민 명부(자리 비운 친구 포함)를 고양이 필드에 반영 */
 function syncRemoteCats() {
-  const ms = MP.inRoom() ? MP.members() : [];
-  // 나간 멤버의 고양이 제거
+  const online = new Map(MP.inRoom() ? MP.members().map(m => [m.id, m]) : []);
+  const roster = { ...roomRoster() };
+  for (const [id, m] of online) {
+    roster[id] = { name: m.name, hat: m.hat, skin: m.skin, active: m.active, lastSeen: Date.now() };
+  }
+  const ids = MP.inRoom() ? Object.keys(roster) : [];
+
   for (const c of [...cats]) {
-    if (c.cfg.remote && !ms.some(m => m.id === c.cfg.id)) {
+    if (c.cfg.remote && !ids.includes(c.cfg.id)) {
       c.el.remove();
       cats.splice(cats.indexOf(c), 1);
     }
   }
-  ms.forEach((m, i) => {
-    const c = cats.find(x => x.cfg.id === m.id);
+
+  ids.forEach((id, i) => {
+    const info = roster[id];
+    const isOnline = online.has(id);
+    let c = cats.find(x => x.cfg.id === id);
     if (!c) {
-      const nc = new Cat({
-        id: m.id, name: m.name, skin: m.skin, hat: m.hat, remote: true,
-        lane: 34 + (i % 4) * 22, slot: i + 1, slotCount: ms.length + 1,
+      c = new Cat({
+        id, name: info.name, skin: info.skin, hat: info.hat, remote: true,
+        lane: 34 + (i % 4) * 22, slot: i + 1, slotCount: ids.length + 1,
       });
-      nc.friendActive = m.active;
-      nc.updateTag();
-      cats.push(nc);
-      toastMsg(`<b>${m.name}</b>의 고양이가 놀러왔어요! 🎉`);
-    } else {
-      c.cfg.name = m.name;
-      c.cfg.skin = m.skin;
-      c.cfg.hat = m.hat;
-      c.applyLook();
-      c.updateTag();
+      cats.push(c);
+      if (isOnline) toastMsg(`<b>${info.name}</b>의 고양이가 놀러왔어요! 🎉`);
+    } else if (isOnline && c.away) {
+      toastMsg(`<b>${info.name}</b>(이)가 돌아왔어요! 👋`);
     }
+    c.cfg.name = info.name;
+    c.cfg.skin = info.skin;
+    c.cfg.hat = info.hat;
+    c.away = !isOnline;
+    c.friendActive = isOnline && !!online.get(id).active;
+    c.el.classList.toggle('away', c.away);
+    c.applyLook();
+    c.updateTag();
   });
 }
 
@@ -426,10 +477,42 @@ $('#lockscreen').addEventListener('pointerdown', e => {
 
 /* ── 실시간 방 연결 ──────────────────────────────────── */
 
+/* 지금 접속 중인 멤버를 마을 주민 명부에 기록 (자리 비워도 고양이가 남도록) */
+function updateRoster() {
+  if (!MP.inRoom()) return;
+  const code = MP.roomCode();
+  const r = state.rosters[code] = state.rosters[code] || {};
+  for (const m of MP.members()) {
+    r[m.id] = { name: m.name, hat: m.hat, skin: m.skin, lastSeen: Date.now() };
+  }
+  // 명부는 최근 본 8명까지
+  const ids = Object.keys(r).sort((a, b) => r[b].lastSeen - r[a].lastSeen);
+  for (const id of ids.slice(8)) delete r[id];
+  save();
+}
+
+/* 내 고양이가 쓰다듬받았을 때의 연출 */
+function receivePet(name, offline = false, t = Date.now()) {
+  addGuestbook(name, 'pet', t);
+  toastMsg(offline
+    ? `<b>${name}</b>(이)가 다녀갔어요 — 내 고양이를 쓰다듬어줬어요 🐾`
+    : `<b>${name}</b>(이)가 내 고양이를 쓰다듬어줬어요 🐾`);
+  myCat.el.classList.add('happy');
+  myCat.showBubble('💗');
+  const r = myCat.el.getBoundingClientRect();
+  for (let i = 0; i < 6; i++) {
+    setTimeout(() => spawnHeart(r.left + r.width / 2 + rand(-26, 26), r.top + rand(0, 24)), i * 120);
+  }
+  setTimeout(() => myCat.el.classList.remove('happy'), 2000);
+  renderFriends();
+}
+
 const MP_HANDLERS = {
   getName: () => state.playerName,
   getOutfit: () => ({ hat: state.equipped.hat, skin: state.equipped.skin }),
-  onMembers: () => { syncRemoteCats(); renderFriends(); },
+  onMembers: () => { updateRoster(); syncRemoteCats(); renderFriends(); },
+  onPet: sender => receivePet(sender.name),
+  onTrace: msg => { if (msg.kind === 'pet') receivePet(msg.name || '친구', true, msg.t); },
   onActivity: (id, active) => {
     const c = cats.find(x => x.cfg.id === id);
     if (!c) return;
@@ -459,7 +542,15 @@ const MP_HANDLERS = {
 
 function joinRoom(code) {
   MP.join(code, MP_HANDLERS);
+  state.lastRoom = MP.roomCode();   // 다음에 앱을 열면 자동으로 우리 마을에 재입장
+  save();
   renderFriends();
+}
+
+function leaveRoom() {
+  state.lastRoom = null;
+  save();
+  MP.leave();
 }
 
 function shareRoomLink() {
@@ -474,8 +565,8 @@ function shareRoomLink() {
   }
 }
 
-/* 초대 링크(?room=CODE)로 들어온 경우 자동 참가 */
-const urlRoom = new URLSearchParams(location.search).get('room');
+/* 초대 링크(?room=CODE)로 들어왔거나, 마지막 마을이 있으면 자동 재입장 */
+const urlRoom = new URLSearchParams(location.search).get('room') || state.lastRoom;
 if (urlRoom) setTimeout(() => joinRoom(urlRoom), 800);
 
 /* ── 아이템 드랍 (가챠) ──────────────────────────────── */
@@ -696,23 +787,48 @@ function renderFriends() {
 
   let liveSection;
   if (inRoom) {
-    const memberRows = MP.members().map(m => `<div class="row">
-      <span class="r-emoji">${m.hat ? byId(m.hat).emoji : '🐱'}</span>
-      <div class="r-main">
-        <div class="r-title">${m.name}</div>
-        <div class="r-sub">${m.active ? '지금 폰 사용 중 ⌨️' : '접속 중 🟢'}</div>
-      </div>
-      <button class="btn primary" data-wave="${m.id}">👋 인사</button>
-    </div>`).join('')
+    const online = new Map(MP.members().map(m => [m.id, m]));
+    const roster = { ...roomRoster() };
+    for (const [id, m] of online) roster[id] = { ...roster[id], name: m.name, hat: m.hat, active: m.active };
+    const ids = Object.keys(roster).sort((a, b) => (online.has(b) ? 1 : 0) - (online.has(a) ? 1 : 0));
+
+    const memberRows = ids.map(id => {
+      const m = roster[id];
+      const isOn = online.has(id);
+      const status = !isOn
+        ? `자리 비움 💤 · ${m.lastSeen ? relTime(m.lastSeen) + '까지 있었어요' : ''}`
+        : m.active ? '지금 폰 사용 중 ⌨️' : '접속 중 🟢';
+      return `<div class="row" ${isOn ? '' : 'style="opacity:.7"'}>
+        <span class="r-emoji">${m.hat ? byId(m.hat).emoji : '🐱'}</span>
+        <div class="r-main">
+          <div class="r-title">${m.name}</div>
+          <div class="r-sub">${status}</div>
+        </div>
+        ${isOn ? `<button class="btn primary" data-wave="${id}">👋 인사</button>` : ''}
+      </div>`;
+    }).join('')
       || '<p class="hint-text">아직 아무도 없어요. 아래 버튼으로 초대 링크를 보내보세요!</p>';
 
+    const bookRows = state.guestbook.slice(0, 10).map(g => `<div class="row">
+      <span class="r-emoji">🐾</span>
+      <div class="r-main">
+        <div class="r-title">${g.name}${g.count > 1 ? ` <span style="opacity:.6;font-size:12px">×${g.count}</span>` : ''}</div>
+        <div class="r-sub">내 고양이를 쓰다듬고 갔어요 · ${relTime(g.t)}</div>
+      </div>
+    </div>`).join('')
+      || '<p class="hint-text">아직 흔적이 없어요. 친구도 내 고양이를 쓰다듬어줄 수 있어요.</p>';
+
     liveSection = `
-      <div class="sec-title">📡 우리 방 <span style="opacity:.5;font-weight:400">${MP.isConnected() ? '연결됨' : '연결 중…'}</span></div>
+      <div class="sec-title">📡 우리 마을 <span style="opacity:.5;font-weight:400">${MP.isConnected() ? '연결됨' : '연결 중…'}</span></div>
       <div class="invite-code">${MP.roomCode()}</div>
       <button class="btn primary wide" id="share-room">📤 초대 링크 보내기 (카톡 등)</button>
-      <div class="sec-title">👥 함께 있는 친구들</div>
+      <div class="sec-title">👥 마을 주민들</div>
       <div class="row-list">${memberRows}</div>
-      <button class="btn danger wide" id="leave-room">방 나가기</button>`;
+      <p class="hint-text">자리 비운 친구의 고양이도 <b>꾹 눌러 쓰다듬어</b> 줄 수 있어요.
+      친구가 돌아오면 "다녀갔어요 🐾" 흔적이 전달됩니다. 답장은 필요 없어요.</p>
+      <div class="sec-title">📖 방명록 <span style="opacity:.5;font-weight:400">— 다녀간 흔적</span></div>
+      <div class="row-list">${bookRows}</div>
+      <button class="btn danger wide" id="leave-room">마을 떠나기</button>`;
   } else {
     liveSection = `
       <div class="sec-title">📡 실시간 함께하기</div>
@@ -767,7 +883,7 @@ function renderFriends() {
 
   if (inRoom) {
     $('#share-room').addEventListener('click', shareRoomLink);
-    $('#leave-room').addEventListener('click', () => MP.leave());
+    $('#leave-room').addEventListener('click', leaveRoom);
     $('#tab-friends').querySelectorAll('[data-wave]').forEach(b =>
       b.addEventListener('click', () => {
         closeSheet();
