@@ -1,4 +1,4 @@
-const CACHE = 'bongo-cat-mobile-v2';
+const CACHE = 'bongo-cat-mobile-v3';
 const ASSETS = [
   '.',
   'index.html',
@@ -23,12 +23,13 @@ self.addEventListener('activate', e => {
   );
 });
 
+// 네트워크 우선 — 항상 최신 버전을 받고, 오프라인일 때만 캐시로 동작
 self.addEventListener('fetch', e => {
   e.respondWith(
-    caches.match(e.request).then(hit => hit || fetch(e.request).then(res => {
+    fetch(e.request).then(res => {
       const copy = res.clone();
       caches.open(CACHE).then(c => c.put(e.request, copy));
       return res;
-    }))
+    }).catch(() => caches.match(e.request))
   );
 });
