@@ -19,43 +19,40 @@ button { font-family: inherit; }
 #lockscreen {
   position: fixed;
   inset: 0;
-  background: linear-gradient(180deg, #0d0e2b 0%, #1c1d4b 45%, #35306b 75%, #4b3f7a 100%);
+  background: linear-gradient(180deg, #A9D8F5 0%, #CBE8F9 34%, #F6EFCF 62%, #FBE7B4 100%);
   overflow: hidden;
 }
 
 #sky { position: absolute; inset: 0; pointer-events: none; }
 
-.moon {
+.sun {
   position: absolute;
-  top: 9%;
+  top: 8%;
   right: 12%;
-  width: 54px;
-  height: 54px;
+  width: 58px;
+  height: 58px;
   border-radius: 50%;
-  background: radial-gradient(circle at 35% 35%, #fff8e1, #ffe9a8 65%, #f4d477);
-  box-shadow: 0 0 40px 12px rgba(255, 236, 170, .25);
+  background: radial-gradient(circle at 38% 38%, #FFF6D8, #FFDE7A 60%, #FFC93C);
+  box-shadow: 0 0 46px 16px rgba(255, 214, 110, .45);
 }
 
-.stars {
+.cloud {
   position: absolute;
-  inset: 0;
-  background-image:
-    radial-gradient(1.4px 1.4px at 12% 18%, #fff, transparent),
-    radial-gradient(1.2px 1.2px at 28% 9%, #ffffffcc, transparent),
-    radial-gradient(1.6px 1.6px at 44% 22%, #fff, transparent),
-    radial-gradient(1.1px 1.1px at 63% 12%, #ffffffaa, transparent),
-    radial-gradient(1.5px 1.5px at 79% 27%, #fff, transparent),
-    radial-gradient(1.2px 1.2px at 91% 15%, #ffffffbb, transparent),
-    radial-gradient(1.3px 1.3px at 8% 38%, #ffffff99, transparent),
-    radial-gradient(1.5px 1.5px at 55% 34%, #ffffffcc, transparent),
-    radial-gradient(1.2px 1.2px at 36% 44%, #ffffff88, transparent),
-    radial-gradient(1.4px 1.4px at 72% 42%, #ffffffbb, transparent);
-  animation: twinkle 4s ease-in-out infinite alternate;
+  width: 84px;
+  height: 26px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, .92);
+  box-shadow: 22px -12px 0 -2px rgba(255, 255, 255, .92),
+              46px -4px 0 -4px rgba(255, 255, 255, .85);
+  animation: drift 60s linear infinite;
 }
 
-@keyframes twinkle {
-  from { opacity: .55; }
-  to   { opacity: 1; }
+.cloud.c1 { top: 14%; left: -20%; }
+.cloud.c2 { top: 26%; left: -55%; transform: scale(.7); animation-duration: 85s; }
+
+@keyframes drift {
+  from { margin-left: 0; }
+  to   { margin-left: 140vw; }
 }
 
 #clock-wrap {
@@ -69,17 +66,18 @@ button { font-family: inherit; }
 
 #clock-time {
   font-size: clamp(56px, 18vw, 84px);
-  font-weight: 200;
+  font-weight: 300;
   letter-spacing: 2px;
   line-height: 1;
-  text-shadow: 0 2px 24px rgba(0, 0, 0, .35);
+  color: #59431F;
+  text-shadow: 0 2px 16px rgba(255, 255, 255, .65);
 }
 
 #clock-date {
   margin-top: 10px;
   font-size: 15px;
-  font-weight: 400;
-  opacity: .85;
+  font-weight: 500;
+  color: #6E5730;
 }
 
 #coin-badge {
@@ -88,21 +86,55 @@ button { font-family: inherit; }
   right: 14px;
   z-index: 3;
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 700;
+  color: #59431F;
   padding: 6px 12px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, .12);
+  background: rgba(255, 255, 255, .55);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
 }
 
-/* ── 바닥 / 고양이 필드 ─────────────────────────────── */
+/* ── 초원 / 울타리 / 햄스터 필드 ────────────────────── */
 #ground {
   position: absolute;
   left: 0; right: 0; bottom: 0;
-  height: 88px;
-  background: linear-gradient(180deg, rgba(20, 16, 46, 0) 0%, rgba(16, 13, 40, .85) 55%, #0c0a28 100%);
+  height: 120px;
+  background: linear-gradient(180deg, rgba(124, 182, 92, 0) 0%, #8FC468 26%, #6FAE4E 55%, #55913D 100%);
   pointer-events: none;
+}
+
+#fence {
+  position: absolute;
+  left: -8px; right: -8px;
+  bottom: 86px;
+  height: 44px;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, transparent 6px, #C08A52 6px 13px, transparent 13px 24px, #C08A52 24px 31px, transparent 31px),
+    repeating-linear-gradient(90deg, #A9713C 0 9px, transparent 9px 74px);
+  opacity: .95;
+}
+
+#fence::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(90deg, rgba(90, 55, 20, .25) 0 9px, transparent 9px 74px);
+}
+
+.deco {
+  position: absolute;
+  font-size: 22px;
+  z-index: 1;
+  pointer-events: none;
+  animation: sway 3.4s ease-in-out infinite alternate;
+  transform-origin: bottom center;
+}
+
+@keyframes sway {
+  from { transform: rotate(-4deg); }
+  to   { transform: rotate(5deg); }
 }
 
 #cat-field {
@@ -182,38 +214,80 @@ button { font-family: inherit; }
 }
 
 .cat.active-friend .tag .dot { background: #4ade80; box-shadow: 0 0 6px #4ade80; }
-.cat.is-me .tag { background: rgba(124, 92, 214, .55); }
+.cat.is-me .tag { background: rgba(199, 123, 47, .72); }
 
-/* 몸통 바운스 (걷기) */
-.cat.walking .catsvg { animation: walk-bob .38s ease-in-out infinite; }
+/* 종종걸음 (이동) */
+.cat.walking .catsvg { animation: walk-bob .26s ease-in-out infinite; }
 
 @keyframes walk-bob {
-  0%, 100% { transform: translateY(0) rotate(-1.5deg); }
-  50%      { transform: translateY(-5px) rotate(1.5deg); }
+  0%, 100% { transform: translateY(0) rotate(-2deg); }
+  50%      { transform: translateY(-4px) rotate(2deg); }
 }
 
-/* 봉고 두드리기 */
-.cat.tapping .paw-l { animation: paw-tap .22s ease-in-out infinite; }
-.cat.tapping .paw-r { animation: paw-tap .22s ease-in-out infinite .11s; }
-.cat.tapping .catsvg { animation: tap-groove .44s ease-in-out infinite; }
+/* ── 챗바퀴 모드 (이동 중/누르는 중/친구 활동 중) ────── */
+.cat .wheel {
+  display: none;
+  position: absolute;
+  left: 50%;
+  bottom: -2px;
+  width: 118px;
+  height: 118px;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.cat.tapping .wheel { display: block; }
+.cat.tapping .wheel .spokes {
+  animation: wheel-spin .5s linear infinite;
+  transform-origin: 60px 60px;
+}
+
+@keyframes wheel-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+.cat.tapping .catsvg { animation: wheel-run .24s ease-in-out infinite; }
+.cat.tapping .paw-l { animation: paw-tap .18s ease-in-out infinite; }
+.cat.tapping .paw-r { animation: paw-tap .18s ease-in-out infinite .09s; }
+
+@keyframes wheel-run {
+  0%, 100% { transform: translateY(-8px) rotate(-2deg); }
+  50%      { transform: translateY(-11px) rotate(2deg); }
+}
 
 @keyframes paw-tap {
   0%, 100% { transform: translateY(0); }
-  50%      { transform: translateY(-11px); }
+  50%      { transform: translateY(-9px); }
 }
 
-@keyframes tap-groove {
-  0%, 100% { transform: translateY(0); }
-  50%      { transform: translateY(-2px); }
+/* ── 노트북 모드 (가만히 있을 때) ────────────────────── */
+.cat .laptop {
+  display: none;
+  position: absolute;
+  left: 50%;
+  bottom: -3px;
+  width: 62px;
+  transform: translateX(-50%);
+  pointer-events: none;
+  filter: drop-shadow(0 2px 3px rgba(60, 40, 10, .3));
 }
 
-/* 앉아서 꾸벅 */
+.cat.idle .laptop { display: block; }
 .cat.idle .catsvg { animation: breathe 2.6s ease-in-out infinite; }
+.cat.idle .paw-l { animation: paw-tap .42s ease-in-out infinite; }
+.cat.idle .paw-r { animation: paw-tap .42s ease-in-out infinite .21s; }
 
 @keyframes breathe {
   0%, 100% { transform: scaleY(1); }
   50%      { transform: scaleY(.97) translateY(1.5px); }
 }
+
+/* 자리 비운 이웃은 노트북을 덮고 잠들어 있다 */
+.cat.away .laptop { display: none; }
+.cat.away .paw-l, .cat.away .paw-r { animation: none; }
+.cat.away .eyes-open { display: none; }
+.cat.away .eyes-happy { display: block; }
 
 /* 탭 반응: 점프 */
 .cat.jump { animation: cat-jump .5s cubic-bezier(.3, 1.6, .5, 1); }
@@ -312,7 +386,7 @@ button { font-family: inherit; }
   gap: 10px;
   padding: 10px 18px;
   border-radius: 16px;
-  background: rgba(22, 20, 52, .85);
+  background: rgba(52, 38, 24, .88);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
   border: 1px solid var(--rc, rgba(255, 255, 255, .18));
@@ -384,7 +458,7 @@ button { font-family: inherit; }
   max-height: 72vh;
   display: flex;
   flex-direction: column;
-  background: rgba(28, 26, 62, .92);
+  background: rgba(44, 32, 24, .94);
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
   border-radius: 24px 24px 0 0;
@@ -425,7 +499,7 @@ button { font-family: inherit; }
 }
 
 #sheet-tabs .tab.active {
-  background: #7c5cd6;
+  background: #C77B2F;
   color: #fff;
 }
 
@@ -477,14 +551,14 @@ button { font-family: inherit; }
 .item-card .i-count {
   position: absolute;
   top: -6px; right: -4px;
-  background: #7c5cd6;
+  background: #C77B2F;
   font-size: 10px;
   font-weight: 700;
   padding: 2px 6px;
   border-radius: 999px;
 }
 
-.item-card.equipped { background: rgba(124, 92, 214, .3); }
+.item-card.equipped { background: rgba(199, 123, 47, .32); }
 .item-card.equipped::after {
   content: '착용중';
   position: absolute;
@@ -530,7 +604,7 @@ button { font-family: inherit; }
   flex: none;
 }
 
-.btn.primary { background: #7c5cd6; }
+.btn.primary { background: #C77B2F; }
 .btn.gold { background: #b8860b; }
 .btn.danger { background: rgba(248, 113, 113, .25); color: #fca5a5; }
 .btn.wide { width: 100%; padding: 12px; font-size: 14px; margin-top: 10px; }
@@ -561,8 +635,8 @@ button { font-family: inherit; }
   font-weight: 800;
   letter-spacing: 5px;
   text-align: center;
-  background: rgba(124, 92, 214, .2);
-  border: 1px dashed rgba(124, 92, 214, .8);
+  background: rgba(199, 123, 47, .22);
+  border: 1px dashed rgba(230, 160, 80, .9);
   border-radius: 12px;
   padding: 12px;
   margin-top: 8px;

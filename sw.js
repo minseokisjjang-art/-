@@ -1,4 +1,4 @@
-const CACHE = 'bongo-cat-mobile-v3';
+const CACHE = 'hamster-ranch-v4';
 const ASSETS = [
   '.',
   'index.html',

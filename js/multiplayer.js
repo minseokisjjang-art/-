@@ -61,7 +61,11 @@ const MP = (() => {
     }));
   }
 
-  function myOutfit() { return handlers.getOutfit(); }
+  function myOutfit() {
+    const o = handlers.getOutfit();
+    const sname = handlers.getServerName ? handlers.getServerName() : '';
+    return sname ? { ...o, sname } : o;
+  }
 
   function join(code, h) {
     leave(true);
@@ -148,6 +152,7 @@ const MP = (() => {
       case 'hello':
         m.hat = msg.hat ?? null;
         m.skin = msg.skin || m.skin;
+        if (msg.sname && handlers.onServerName) handlers.onServerName(msg.sname);
         handlers.onMembers();
         // 새 멤버가 나를 알 수 있게 내 상태를 응답 (응답 폭주 방지용 랜덤 지연)
         setTimeout(() => publish('state', myOutfit()), 200 + Math.random() * 800);
@@ -156,6 +161,7 @@ const MP = (() => {
       case 'outfit':
         m.hat = msg.hat ?? null;
         m.skin = msg.skin || m.skin;
+        if (msg.sname && handlers.onServerName) handlers.onServerName(msg.sname);
         handlers.onMembers();
         break;
       case 'activity':

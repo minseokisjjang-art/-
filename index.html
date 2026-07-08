@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
-<meta name="theme-color" content="#141537">
-<title>봉고캣 모바일 · 잠금화면</title>
+<meta name="theme-color" content="#BFE3F7">
+<title>햄스터 목장 · 잠금화면</title>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="css/style.css">
@@ -13,8 +13,9 @@
 
 <div id="lockscreen">
   <div id="sky">
-    <div class="stars"></div>
-    <div class="moon"></div>
+    <div class="sun"></div>
+    <div class="cloud c1"></div>
+    <div class="cloud c2"></div>
   </div>
 
   <div id="clock-wrap">
@@ -26,12 +27,16 @@
 
   <div id="toast-area"></div>
 
-  <div id="cat-field"></div>
   <div id="ground"></div>
+  <div id="fence"></div>
+  <span class="deco" style="left:6%;  bottom:66px">🌻</span>
+  <span class="deco" style="left:88%; bottom:70px">🌻</span>
+  <span class="deco" style="left:46%; bottom:62px; font-size:15px">🌾</span>
+  <div id="cat-field"></div>
 
   <button id="swipe-hint" type="button">
     <span class="chev">︿</span>
-    봉고캣 꾸미기 · 친구 · 장터
+    목장 꾸미기 · 로비 · 장터
   </button>
 </div>
 
@@ -41,7 +46,7 @@
   <div id="sheet-grip"></div>
   <nav id="sheet-tabs">
     <button class="tab active" data-tab="dress">🎩 꾸미기</button>
-    <button class="tab" data-tab="friends">👥 친구</button>
+    <button class="tab" data-tab="friends">👥 로비</button>
     <button class="tab" data-tab="market">🛒 장터</button>
   </nav>
   <div id="sheet-body">
