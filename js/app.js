@@ -206,8 +206,10 @@ class Cat {
     this.el.innerHTML = `
       <div class="tag"><span class="dot"></span><span class="tname"></span></div>
       <div class="flip">
-        <div class="hat"></div>
-        ${catSVG()}
+        <div class="bounce">
+          <div class="hat"></div>
+          ${catSVG()}
+        </div>
       </div>`;
     const scale = cfg.isMe ? 1 : rand(.82, .92);
     this.el.style.zIndex = cfg.isMe ? 4 : 3;
@@ -754,11 +756,12 @@ function itemCardHTML(item, opts = {}) {
   const count = state.inv[item.id] || 0;
   const owned = count > 0;
   const equipped = state.equipped.hat === item.id || state.equipped.skin === item.id;
+  const selected = fitting.hat === item.id || fitting.skin === item.id;
   const visual = item.type === 'skin'
     ? `<div class="i-swatch" style="background:${item.fur}"></div>`
     : `<div class="i-emoji">${item.emoji}</div>`;
-  return `<div class="item-card ${owned ? '' : 'locked'} ${equipped ? 'equipped' : ''}"
-    style="--rc:${r.color}" data-id="${item.id}" data-act="${opts.act || 'equip'}">
+  return `<div class="item-card ${owned ? '' : 'locked'} ${equipped ? 'equipped' : ''} ${selected ? 'selected' : ''}"
+    style="--rc:${r.color}" data-id="${item.id}" data-act="${opts.act || 'fit'}">
     ${count > 1 ? `<span class="i-count">×${count}</span>` : ''}
     ${visual}
     <div class="i-name">${item.name}</div>
@@ -766,7 +769,42 @@ function itemCardHTML(item, opts = {}) {
   </div>`;
 }
 
+/* 입어보기(피팅) 상태 — 확정을 눌러야 실제 룩에 적용된다 */
+let fitting = { hat: null, skin: 'skin-white' };
+let fittingInit = false;
+
+function fittingPreviewHTML() {
+  const skin = byId(fitting.skin) || byId('skin-white');
+  const hat = fitting.hat ? byId(fitting.hat) : null;
+  const hatOwned = !fitting.hat || (state.inv[fitting.hat] || 0) > 0;
+  const skinOwned = (state.inv[fitting.skin] || 0) > 0;
+  const canConfirm = hatOwned && skinOwned;
+  const dirty = fitting.hat !== state.equipped.hat || fitting.skin !== state.equipped.skin;
+  return `
+    <div class="fit-card">
+      <div class="fit-stage">
+        <div class="fit-ham" style="--fur:${skin.fur}">
+          <div class="hat">${hat ? hat.emoji : ''}</div>
+          ${catSVG()}
+        </div>
+      </div>
+      <div class="fit-info">
+        ${skin.name}${hat ? ' + ' + hat.name : ''}
+        ${dirty ? '<span class="fit-badge">입어보는 중</span>' : '<span class="fit-badge on">착용 중</span>'}
+      </div>
+      ${canConfirm ? '' : '<p class="hint-text" style="margin:4px 0">미보유 아이템이 있어요 — 장터에서 구해보세요 🛒</p>'}
+      <button class="btn primary wide" id="fit-confirm" ${(!dirty || !canConfirm) ? 'disabled' : ''}>✅ 확정</button>
+      <button class="btn wide" id="fit-reset" ${dirty ? '' : 'disabled'}>↩ 되돌리기</button>
+    </div>`;
+}
+
 function renderDress() {
+  if (!fittingInit) {
+    fitting = { hat: state.equipped.hat, skin: state.equipped.skin };
+    fittingInit = true;
+  }
+  const scrollY = $('#sheet-body') ? $('#sheet-body').scrollTop : 0;
+
   const hats = CATALOG.filter(i => i.type === 'hat');
   const skins = CATALOG.filter(i => i.type === 'skin');
   const emos = CATALOG.filter(i => i.type === 'emo');
@@ -775,58 +813,82 @@ function renderDress() {
     const hat = p.hat ? byId(p.hat) : null;
     const skin = byId(p.skin);
     return `<div class="row">
-      <span class="r-emoji">${hat ? hat.emoji : '🐱'}</span>
+      <span class="r-emoji">${hat ? hat.emoji : '🐹'}</span>
       <div class="r-main">
         <div class="r-title">${p.name}</div>
         <div class="r-sub">${skin.name}${hat ? ' + ' + hat.name : ''}</div>
       </div>
-      <button class="btn primary" data-preset-apply="${idx}">적용</button>
+      <button class="btn primary" data-preset-apply="${idx}">입어보기</button>
       <button class="btn danger" data-preset-del="${idx}">✕</button>
     </div>`;
-  }).join('') || `<p class="hint-text">마음에 드는 조합을 저장해두고 한 번에 바꿔보세요.</p>`;
+  }).join('') || `<p class="hint-text">마음에 드는 조합을 저장해두고 한 번에 입어보세요.</p>`;
 
   $('#tab-dress').innerHTML = `
-    <div class="sec-title">🎩 모자 <span style="opacity:.5;font-weight:400">— 탭해서 착용/해제</span></div>
-    <div class="item-grid">${hats.map(i => itemCardHTML(i)).join('')}</div>
-    <div class="sec-title">🐹 햄스터 스킨</div>
-    <div class="item-grid">${skins.map(i => itemCardHTML(i)).join('')}</div>
+    <p class="hint-text" style="margin-top:8px">왼쪽에서 아이템을 누르면 오른쪽 햄스터가 입어봐요.
+    <b>확정</b>을 눌러야 실제 룩이 바뀝니다.</p>
+    <div class="dress-split">
+      <div class="dress-left">
+        <div class="sec-title">🎩 모자</div>
+        <div class="item-grid small">${hats.map(i => itemCardHTML(i)).join('')}</div>
+        <div class="sec-title">🐹 스킨</div>
+        <div class="item-grid small">${skins.map(i => itemCardHTML(i)).join('')}</div>
+      </div>
+      <div class="dress-right">${fittingPreviewHTML()}</div>
+    </div>
     <div class="sec-title">💬 이모티콘 팩 <span style="opacity:.5;font-weight:400">— 보유하면 탭 반응에 추가</span></div>
     <div class="item-grid">${emos.map(i => itemCardHTML(i, { act: 'none', sub: i.pool.join(' ') })).join('')}</div>
     <div class="sec-title">💾 프리셋</div>
     <div class="row-list">${presetRows}</div>
-    <button class="btn primary wide" id="save-preset">현재 세팅 프리셋으로 저장</button>
+    <button class="btn primary wide" id="save-preset">지금 입어본 조합을 프리셋으로 저장</button>
     <p class="hint-text">아이템은 화면을 켜두거나 햄스터와 놀아주면 자동으로 들어와요. (커먼 60% ~ 레전더리 3%)</p>`;
 
+  /* 아이템 탭 → 입어보기 (실제 적용은 확정 버튼에서) */
   $('#tab-dress').querySelectorAll('.item-card').forEach(card => {
     card.addEventListener('click', () => {
       const item = byId(card.dataset.id);
-      if (!state.inv[item.id]) { toastMsg(`아직 없는 아이템이에요. 장터를 구경해보세요! 🛒`); return; }
-      if (card.dataset.act === 'none') return;
+      if (card.dataset.act === 'none') {
+        if (!state.inv[item.id]) toastMsg('아직 없는 팩이에요. 장터를 구경해보세요! 🛒');
+        return;
+      }
       if (item.type === 'hat') {
-        state.equipped.hat = state.equipped.hat === item.id ? null : item.id;
+        fitting.hat = fitting.hat === item.id ? null : item.id;
       } else if (item.type === 'skin') {
-        state.equipped.skin = item.id;
+        fitting.skin = item.id;
       }
-      save();
-      myCat.cfg.hat = state.equipped.hat;
-      myCat.cfg.skin = state.equipped.skin;
-      myCat.applyLook();
-      myCat.tapReact('✨');
       renderDress();
-      // PC판처럼: 내 새 아이템은 친구 화면에도 즉시 반영
-      if (MP.inRoom()) {
-        MP.outfit();
-        toastMsg('친구들 화면의 내 햄스터에도 바로 적용됐어요 ✨');
-      }
     });
+  });
+
+  const confirmBtn = $('#fit-confirm');
+  if (confirmBtn) confirmBtn.addEventListener('click', () => {
+    state.equipped.hat = fitting.hat;
+    state.equipped.skin = fitting.skin;
+    save();
+    myCat.cfg.hat = state.equipped.hat;
+    myCat.cfg.skin = state.equipped.skin;
+    myCat.applyLook();
+    myCat.tapReact('✨');
+    if (MP.inRoom()) {
+      MP.outfit();   // 친구들 화면의 내 햄스터에도 즉시 반영
+      toastMsg('룩 확정! 친구들 화면에도 바로 적용됐어요 ✨');
+    } else {
+      toastMsg('룩 확정! ✨');
+    }
+    renderDress();
+  });
+
+  const resetBtn = $('#fit-reset');
+  if (resetBtn) resetBtn.addEventListener('click', () => {
+    fitting = { hat: state.equipped.hat, skin: state.equipped.skin };
+    renderDress();
   });
 
   $('#save-preset').addEventListener('click', () => {
     if (state.presets.length >= 4) { toastMsg('프리셋은 4개까지 저장할 수 있어요.'); return; }
     state.presets.push({
       name: `세팅 ${state.presets.length + 1}`,
-      hat: state.equipped.hat,
-      skin: state.equipped.skin,
+      hat: fitting.hat,
+      skin: fitting.skin,
     });
     save();
     renderDress();
@@ -835,14 +897,8 @@ function renderDress() {
   $('#tab-dress').querySelectorAll('[data-preset-apply]').forEach(b =>
     b.addEventListener('click', () => {
       const p = state.presets[+b.dataset.presetApply];
-      if (p.hat && !state.inv[p.hat]) { toastMsg('프리셋의 모자를 더 이상 보유하고 있지 않아요.'); return; }
-      state.equipped.hat = p.hat;
-      state.equipped.skin = state.inv[p.skin] ? p.skin : state.equipped.skin;
-      save();
-      myCat.cfg.hat = state.equipped.hat;
-      myCat.cfg.skin = state.equipped.skin;
-      myCat.applyLook();
-      if (MP.inRoom()) MP.outfit();
+      fitting = { hat: p.hat, skin: p.skin };
+      toastMsg('프리셋을 입어봤어요 — 확정을 눌러 적용하세요');
       renderDress();
     }));
 
@@ -852,6 +908,8 @@ function renderDress() {
       save();
       renderDress();
     }));
+
+  if ($('#sheet-body')) $('#sheet-body').scrollTop = scrollY;
 }
 
 /* ── 친구 탭 ─────────────────────────────────────────── */
