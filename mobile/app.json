@@ -1,0 +1,28 @@
+{
+  "expo": {
+    "name": "고양이 마당",
+    "slug": "cat-yard",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSMotionUsageDescription": "걸음 수에 따라 고양이가 움직이기 위해 모션 데이터를 사용합니다."
+      }
+    },
+    "android": {
+      "permissions": ["android.permission.ACTIVITY_RECOGNITION"],
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      }
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    }
+  }
+}
