@@ -39,7 +39,7 @@ export default function Scene({ night = false, time, dateStr, rows = [], desks, 
         <Text style={[st.boardTime, night && st.boardTimeBig, { color: T.chalk }]}>{time}</Text>
         <Text style={[st.boardDate, { color: T.chalk }]}>{dateStr}</Text>
         <View style={[st.boardLine, { backgroundColor: T.chalk }]} />
-        <Text style={[st.boardTitle, { color: T.chalk }]}>오늘 점수판 · 걸음 ＋ 타이핑</Text>
+        <Text style={[st.boardTitle, { color: T.chalk }]}>오늘 점수판 · 걸음 ＋ 상호작용</Text>
         {rows.map(r => (
           <View key={r.id} style={st.row}>
             <Text style={[st.rowName, { color: T.chalk }]} numberOfLines={1}>

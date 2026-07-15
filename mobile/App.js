@@ -1,15 +1,20 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  KeyboardAvoidingView, Platform, Pressable, StyleSheet,
-  Text, TextInput, useWindowDimensions, View,
+  Pressable, StyleSheet, Text, useWindowDimensions, View,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import Scene from './src/Scene';
 import Cat from './src/Cat';
 import useClock from './src/useClock';
 import useSteps from './src/useSteps';
 import { DAY, NIGHT, rand } from './src/theme';
+import {
+  BONUS_FRIEND_PET, BONUS_PET, BONUS_TAP, DEFAULT_LINES,
+  furById, hatById, POINT_UNIT, SPEAK_TICK_MS, STARDUST_PER_UNIT,
+} from './src/data';
+import { DressSheet, LinesSheet, PetsSheet } from './src/Sheets';
 
 const SOURCE_LABEL = {
   'checking': '센서 확인 중…',
@@ -19,6 +24,7 @@ const SOURCE_LABEL = {
 };
 
 const CAT_W = 130;
+const SAVE_KEY = 'cat-yard-v1';
 
 /* 친구 연동(Supabase) 전까지의 데모 주민 — 기존 PWA의 데모 친구를 계승 */
 const DEMO_FRIENDS = [
@@ -31,27 +37,70 @@ export default function App() {
   const { time, dateStr } = useClock();
   const { steps, source, lastStepAt, addSteps } = useSteps();
 
-  const [memo, setMemo] = useState('');
-  const [keys, setKeys] = useState(0);            // 오늘 타이핑한 글자 수
   const [drive, setDrive] = useState('free');
   const [standby, setStandby] = useState(false);
   const [friends, setFriends] = useState(DEMO_FRIENDS.map(f => ({ ...f, drive: 'free' })));
 
-  /* 활동 시각 — 고양이의 큰 행동 방향(drive)을 정하는 재료 */
-  const typingAt = useRef(Date.now());
+  /* 포인트/보상 경제 */
+  const [bonus, setBonus] = useState(0);            // 오늘 상호작용 보너스
+  const [claimedUnits, setClaimedUnits] = useState(0); // 오늘 이미 별가루로 바꾼 1만 단위 수
+  const [stardust, setStardust] = useState(0);
+  const [owned, setOwned] = useState({ hats: [], furs: ['fur-cream'] });
+  const [equipped, setEquipped] = useState({ hat: null, fur: 'fur-cream' });
+
+  /* 대사 / 쓰다듬 기록 */
+  const [lines, setLines] = useState(DEFAULT_LINES);
+  const [speech, setSpeech] = useState(null);
+  const [petLog, setPetLog] = useState([]);
+  const [unreadPets, setUnreadPets] = useState(0);
+  const [petPulse, setPetPulse] = useState(0);
+  const [sheet, setSheet] = useState(null);         // 'dress' | 'lines' | 'pets' | null
+
+  const linesRef = useRef(lines);
+  useEffect(() => { linesRef.current = lines; }, [lines]);
+  const loaded = useRef(false);
+
+  /* ── 저장/복원 ─────────────────────────────── */
+  useEffect(() => {
+    (async () => {
+      try {
+        const raw = await AsyncStorage.getItem(SAVE_KEY);
+        if (raw) {
+          const s = JSON.parse(raw);
+          setStardust(s.stardust ?? 0);
+          setOwned(s.owned ?? { hats: [], furs: ['fur-cream'] });
+          setEquipped(s.equipped ?? { hat: null, fur: 'fur-cream' });
+          setLines(s.lines?.length ? s.lines : DEFAULT_LINES);
+          setPetLog(s.petLog ?? []);
+          if (s.date === new Date().toDateString()) {
+            setBonus(s.bonus ?? 0);
+            setClaimedUnits(s.claimedUnits ?? 0);
+          }
+        }
+      } catch {}
+      loaded.current = true;
+    })();
+  }, []);
+
+  useEffect(() => {
+    if (!loaded.current) return;
+    AsyncStorage.setItem(SAVE_KEY, JSON.stringify({
+      date: new Date().toDateString(),
+      bonus, claimedUnits, stardust, owned, equipped, lines, petLog,
+    })).catch(() => {});
+  }, [bonus, claimedUnits, stardust, owned, equipped, lines, petLog]);
+
+  /* ── 활동 → 고양이 행동 방향 ────────────────── */
   const touchAt = useRef(Date.now());
   const stepAt = useRef(0);
   useEffect(() => { stepAt.current = lastStepAt; }, [lastStepAt]);
 
-  /* drive 결정 루프: 타이핑 > 걸음 > 낮잠 > 자율 */
   useEffect(() => {
     const iv = setInterval(() => {
       const now = Date.now();
       let next = 'free';
-      if (now - typingAt.current < 2500) next = 'bongo';
-      else if (now - stepAt.current < 45000) next = 'active';
+      if (now - stepAt.current < 45000) next = 'active';
       else if (
-        now - typingAt.current > 120000 &&
         now - touchAt.current > 120000 &&
         (stepAt.current === 0 || now - stepAt.current > 120000)
       ) next = 'sleep';
@@ -60,7 +109,23 @@ export default function App() {
     return () => clearInterval(iv);
   }, []);
 
-  /* 데모 친구 활동 시뮬레이션 — 걸음/필기에 따라 점수가 실제로 올라간다 */
+  /* ── 대사: 8초마다 설정된 확률로 추첨 ───────── */
+  useEffect(() => {
+    const iv = setInterval(() => {
+      const ls = linesRef.current.filter(l => l.text.trim());
+      if (!ls.length) return;
+      const total = ls.reduce((s, l) => s + l.p, 0);
+      const scale = total > 100 ? 100 / total : 1;
+      let r = Math.random() * 100;
+      for (const l of ls) {
+        r -= l.p * scale;
+        if (r < 0) { setSpeech({ text: l.text, id: Date.now() }); break; }
+      }
+    }, SPEAK_TICK_MS);
+    return () => clearInterval(iv);
+  }, []);
+
+  /* ── 데모 친구: 활동 시뮬레이션 + 가끔 내 고양이를 쓰다듬어 줌 ── */
   useEffect(() => {
     const iv = setInterval(() => {
       setFriends(fs => fs.map(f => {
@@ -73,21 +138,67 @@ export default function App() {
     return () => clearInterval(iv);
   }, []);
 
-  /* 스탠바이(잠금화면 모드): 화면이 꺼지지 않게 유지 */
+  const friendPets = (name) => {
+    setPetLog(l => [{ name, t: Date.now() }, ...l].slice(0, 50));
+    setUnreadPets(u => u + 1);
+    setBonus(b => b + BONUS_FRIEND_PET);
+    setPetPulse(p => p + 1);
+  };
+
+  useEffect(() => {
+    // 데모: 시작 8초 뒤 민지가 인사로 쓰다듬고, 이후 이따금 랜덤
+    const first = setTimeout(() => friendPets('민지'), 8000);
+    const iv = setInterval(() => {
+      if (Math.random() < 0.4) {
+        friendPets(DEMO_FRIENDS[Math.floor(Math.random() * DEMO_FRIENDS.length)].name);
+      }
+    }, 25000);
+    return () => { clearTimeout(first); clearInterval(iv); };
+  }, []);
+
+  /* ── 스탠바이(잠금화면 모드) ─────────────────── */
   useEffect(() => {
     if (!standby) return;
     activateKeepAwakeAsync('standby').catch(() => {});
     return () => { deactivateKeepAwake('standby').catch(() => {}); };
   }, [standby]);
 
-  /* 점수 = 걸음 + 타이핑 */
-  const myScore = steps + keys;
+  /* ── 포인트 = 걸음 + 상호작용, 1만마다 별가루 ─── */
+  const points = steps + bonus;
+  const claimable = Math.floor(points / POINT_UNIT) - claimedUnits;
+
+  const claim = () => {
+    if (claimable <= 0) return;
+    setStardust(s => s + claimable * STARDUST_PER_UNIT);
+    setClaimedUnits(u => u + claimable);
+  };
+
+  const buy = (kind, item) => {
+    if (stardust < item.price) return false;
+    setStardust(s => s - item.price);
+    setOwned(o => ({ ...o, [kind]: [...o[kind], item.id] }));
+    setEquipped(e => (kind === 'hats' ? { ...e, hat: item.id } : { ...e, fur: item.id }));
+    return true;
+  };
+
+  const equip = (kind, id) => {
+    setEquipped(e => {
+      if (kind === 'hats') return { ...e, hat: e.hat === id ? null : id };
+      return { ...e, fur: id };
+    });
+  };
+
+  const onPokeMe = kind => {
+    touchAt.current = Date.now();
+    setBonus(b => b + (kind === 'pet' ? BONUS_PET : BONUS_TAP));
+  };
+
+  /* ── 점수판/책상 배치 ────────────────────────── */
   const rows = [
-    { id: 'me', name: '나', score: myScore, me: true, active: drive === 'bongo' || drive === 'active' },
+    { id: 'me', name: '나', score: points, me: true, active: drive === 'active' },
     ...friends.map(f => ({ id: f.id, name: `${f.name} (데모)`, score: f.score, active: f.drive !== 'free' })),
   ].sort((a, b) => b.score - a.score);
 
-  /* 책상 배치 — 교탁(나) 왼쪽 앞, 학생 책상(친구) 오른쪽 */
   const desks = {
     teacher: { left: width * 0.06, w: 124 },
     students: [
@@ -100,15 +211,11 @@ export default function App() {
   const T = standby ? NIGHT : DAY;
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      style={st.root}
-    >
+    <View style={st.root}>
       <StatusBar style={standby ? 'light' : 'dark'} hidden={standby} />
 
       <View style={st.sceneWrap}>
         <Scene night={standby} time={time} dateStr={dateStr} rows={rows} desks={desks}>
-          {/* 배경 탭 → 스탠바이 종료 (고양이는 위 레이어라 계속 만질 수 있다) */}
           {standby && (
             <Pressable style={StyleSheet.absoluteFill} onPress={() => setStandby(false)} />
           )}
@@ -120,17 +227,26 @@ export default function App() {
             </View>
           )}
 
-          {/* 내 고양이 — 타이핑하면 교탁으로 가서 필기 */}
+          {/* 내 고양이 — 머리 위 오늘의 포인트, 1만마다 별가루 받기 */}
           <Cat
             name="나"
+            fur={furById(equipped.fur).color}
+            hat={hatById(equipped.hat)?.emoji}
             drive={drive}
             fieldWidth={width}
             deskX={deskCenter(desks.teacher)}
             bottom={44}
-            onPoke={() => { touchAt.current = Date.now(); }}
+            onPoke={onPokeMe}
+            speech={speech}
+            petPulse={petPulse}
+            crown={claimable > 0
+              ? `✨ 별가루 받기 +${(claimable * STARDUST_PER_UNIT).toLocaleString()}`
+              : `오늘 ${points.toLocaleString()} P`}
+            crownHot={claimable > 0}
+            onCrownPress={claim}
           />
 
-          {/* 데모 친구 고양이들 — 각자 학생 책상에서 필기하거나 돌아다닌다 */}
+          {/* 데모 친구 고양이들 */}
           {friends.map((f, i) => (
             <Cat
               key={f.id}
@@ -153,34 +269,50 @@ export default function App() {
       {!standby && (
         <View style={st.panel}>
           <View style={st.buttonRow}>
+            <Pressable style={st.chip} onPress={() => setSheet('dress')}>
+              <Text style={st.chipText}>🎨 꾸미기</Text>
+            </Pressable>
+            <Pressable style={st.chip} onPress={() => setSheet('lines')}>
+              <Text style={st.chipText}>💬 대사 설정</Text>
+            </Pressable>
+            <Pressable style={st.chip} onPress={() => { setSheet('pets'); setUnreadPets(0); }}>
+              <Text style={st.chipText}>
+                💗 쓰다듬 기록{unreadPets > 0 ? ` (${unreadPets})` : ''}
+              </Text>
+            </Pressable>
+            <Pressable style={st.chip} onPress={() => setStandby(true)}>
+              <Text style={st.chipText}>🌙 스탠바이</Text>
+            </Pressable>
             {source === 'sim' && (
-              <Pressable style={st.chip} onPress={() => addSteps(100)}>
-                <Text style={st.chipText}>👟 ＋100 걸음</Text>
+              <Pressable style={st.chip} onPress={() => addSteps(500)}>
+                <Text style={st.chipText}>👟 ＋500 걸음</Text>
               </Pressable>
             )}
-            <Pressable style={st.chip} onPress={() => setStandby(true)}>
-              <Text style={st.chipText}>🌙 스탠바이 (잠금화면 모드)</Text>
-            </Pressable>
-          </View>
-
-          <View style={st.memoCard}>
-            <Text style={st.memoTitle}>메모장 · 타이핑하면 고양이가 교탁에서 필기해요 ✍️</Text>
-            <TextInput
-              style={st.memoInput}
-              multiline
-              value={memo}
-              placeholder="오늘 할 일, 떠오르는 생각…"
-              placeholderTextColor="#9aa5b1"
-              onChangeText={t => {
-                setKeys(k => k + Math.max(0, t.length - memo.length));
-                setMemo(t);
-                typingAt.current = Date.now();
-              }}
-            />
           </View>
         </View>
       )}
-    </KeyboardAvoidingView>
+
+      <DressSheet
+        visible={sheet === 'dress'}
+        onClose={() => setSheet(null)}
+        stardust={stardust}
+        owned={owned}
+        equipped={equipped}
+        onBuy={buy}
+        onEquip={equip}
+      />
+      <LinesSheet
+        visible={sheet === 'lines'}
+        onClose={() => setSheet(null)}
+        lines={lines}
+        onChange={setLines}
+      />
+      <PetsSheet
+        visible={sheet === 'pets'}
+        onClose={() => setSheet(null)}
+        log={petLog}
+      />
+    </View>
   );
 }
 
@@ -202,23 +334,13 @@ const st = StyleSheet.create({
     backgroundColor: 'rgba(253,251,246,0.97)',
     borderTopLeftRadius: 20, borderTopRightRadius: 20,
     marginTop: -18,
-    padding: 12, paddingBottom: 26, gap: 8,
+    padding: 12, paddingBottom: 24,
   },
-  buttonRow: { flexDirection: 'row', gap: 8, justifyContent: 'flex-end' },
+  buttonRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'center' },
   chip: {
     backgroundColor: '#FFFFFF',
     borderRadius: 999, paddingHorizontal: 13, paddingVertical: 8,
     borderWidth: StyleSheet.hairlineWidth, borderColor: '#E3E0D6',
   },
   chipText: { fontSize: 13, fontWeight: '700', color: '#3D3345' },
-  memoCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14, padding: 13,
-    borderWidth: StyleSheet.hairlineWidth, borderColor: '#E3E0D6',
-  },
-  memoTitle: { fontSize: 12.5, fontWeight: '700', color: '#7a8494', marginBottom: 6 },
-  memoInput: {
-    minHeight: 56, maxHeight: 110, fontSize: 15, color: '#3D3345',
-    textAlignVertical: 'top',
-  },
 });

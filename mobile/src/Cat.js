@@ -16,10 +16,16 @@ const CAT_W = 130;
  *  - 'free'   자율 행동 (두리번/어슬렁/제자리 필기 랜덤)
  *
  * deskX: 이 고양이의 책상 위치(wrap 기준 x). bongo일 때 여기로 간다.
+ * hat: 착용 중인 모자 이모지
+ * speech: {text, id} — 설정된 대사. id가 바뀔 때마다 말풍선으로 말한다
+ * petPulse: 숫자가 올라갈 때마다 "쓰다듬 받음" 반응 (💗 + 그르릉)
+ * crown/crownHot/onCrownPress: 머리 위 오늘의 포인트 배지 (내 고양이 전용)
  */
 export default function Cat({
   name = '나', fur, size = 120, drive = 'free',
   fieldWidth = 360, deskX = 24, bottom = 42, onPoke,
+  hat = null, speech = null, petPulse = 0,
+  crown = null, crownHot = false, onCrownPress,
 }) {
   const [mode, setMode] = useState('idle');       // idle | walk | write | sleep
   const [dir, setDir] = useState(1);
@@ -117,15 +123,32 @@ export default function Cat({
 
   useEffect(() => () => Object.values(timers.current).forEach(clearTimeout), []);
 
-  const showBubble = e => {
+  const showBubble = (e, ms = 1400) => {
     setBubble({ e, id: Date.now() });
     clearTimeout(timers.current.bubble);
-    timers.current.bubble = setTimeout(() => setBubble(null), 1400);
+    timers.current.bubble = setTimeout(() => setBubble(null), ms);
   };
+
+  /* 설정된 대사 — 확률 추첨은 App이 하고, 여기선 말풍선만 띄운다 */
+  useEffect(() => {
+    if (!speech?.id) return;
+    setBubble({ text: speech.text, id: speech.id });
+    clearTimeout(timers.current.bubble);
+    timers.current.bubble = setTimeout(() => setBubble(null), 2400);
+  }, [speech?.id]);
+
+  /* 누가 쓰다듬어 줬을 때의 반응 */
+  useEffect(() => {
+    if (!petPulse) return;
+    showBubble('💗', 1600);
+    setPurring(true);
+    clearTimeout(timers.current.purr);
+    timers.current.purr = setTimeout(() => setPurring(false), 1600);
+  }, [petPulse]);
 
   /* 짧은 탭 → 폴짝 + 이모티콘 */
   const poke = () => {
-    onPoke?.();
+    onPoke?.('tap');
     showBubble(pick(EMOJI));
     setHappy(true);
     clearTimeout(timers.current.happy);
@@ -139,7 +162,7 @@ export default function Cat({
 
   /* 길게 누르기 → 쓰다듬기 */
   const purr = () => {
-    onPoke?.();
+    onPoke?.('pet');
     showBubble('💗');
     setPurring(true);
     clearTimeout(timers.current.purr);
@@ -158,7 +181,19 @@ export default function Cat({
       style={[st.wrap, { bottom, zIndex: 200 - bottom, transform: [{ translateX: xAnim }] }]}
       pointerEvents="box-none"
     >
-      {bubble && <Text style={st.bubble}>{bubble.e}</Text>}
+      {crown && (
+        <Pressable
+          style={[st.crown, crownHot && st.crownHot]}
+          onPress={onCrownPress}
+          testID="crown"
+        >
+          <Text style={[st.crownText, crownHot && st.crownTextHot]}>{crown}</Text>
+        </Pressable>
+      )}
+      {bubble && (bubble.text
+        ? <View style={st.speech}><Text style={st.speechText}>{bubble.text}</Text></View>
+        : <Text style={st.bubble}>{bubble.e}</Text>
+      )}
       {mode === 'sleep' && !bubble && <Text style={st.bubble}>💤</Text>}
       {purring && <Text style={st.purr}>그르릉…</Text>}
       <Pressable onPress={poke} onLongPress={purr} delayLongPress={420} hitSlop={10}>
@@ -166,6 +201,9 @@ export default function Cat({
           style={{ transform: [{ translateY: Animated.add(bounceY, jumpY) }, { scaleX: dir === -1 ? -1 : 1 }] }}
         >
           <CatBody size={size} fur={fur} mood={mood} pawUp={mode === 'write' ? pawFrame : null} />
+          {hat && (
+            <Text style={[st.hat, { left: size / 2 - 15 }]}>{hat}</Text>
+          )}
         </Animated.View>
       </Pressable>
       <View style={st.tag}><Text style={st.tagText}>{name} · {label}</Text></View>
@@ -185,6 +223,49 @@ const st = StyleSheet.create({
     top: -36,
     fontSize: 26,
     zIndex: 3,
+  },
+  speech: {
+    position: 'absolute',
+    top: -44,
+    maxWidth: 170,
+    backgroundColor: 'rgba(255,255,255,0.95)',
+    borderRadius: 12,
+    borderBottomLeftRadius: 3,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    zIndex: 3,
+  },
+  speechText: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#3D3345',
+  },
+  crown: {
+    position: 'absolute',
+    top: -68,
+    zIndex: 4,
+    backgroundColor: 'rgba(255,255,255,0.85)',
+    borderRadius: 999,
+    paddingHorizontal: 9,
+    paddingVertical: 3,
+  },
+  crownHot: {
+    backgroundColor: '#FFE9A8',
+    borderWidth: 1.5,
+    borderColor: '#E8A93C',
+  },
+  crownText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#7a8494',
+    fontVariant: ['tabular-nums'],
+  },
+  crownTextHot: { color: '#8A5A2B' },
+  hat: {
+    position: 'absolute',
+    top: -13,
+    fontSize: 26,
+    zIndex: 2,
   },
   purr: {
     position: 'absolute',
