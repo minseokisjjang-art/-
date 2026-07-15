@@ -10,10 +10,11 @@ const CAT_W = 130;
  * 고양이 행동 컴포넌트 — 교실 버전.
  *
  * drive: 앱이 내려주는 큰 방향
- *  - 'bongo'  타이핑 중 → 교탁(deskX)까지 걸어가 앉아서 필기 ✍️
+ *  - 'bongo'  화면을 누르고 있는 동안(내 입력) → 책상(deskX)에 앉아서 필기 ✍️
+ *             봉고캣의 문법: 필기는 "지금 입력/활동이 있을 때만" 나온다
  *  - 'active' 걸음 감지 → 일어나서 신나게 걸어다님
  *  - 'sleep'  오래 조용함 → 엎드려 낮잠
- *  - 'free'   자율 행동 (두리번/어슬렁/제자리 필기 랜덤)
+ *  - 'free'   자율 행동 (어슬렁/두리번 — 필기는 하지 않는다)
  *
  * deskX: 이 고양이의 책상 위치(wrap 기준 x). bongo일 때 여기로 간다.
  * hat: 착용 중인 모자 이모지
@@ -22,9 +23,9 @@ const CAT_W = 130;
  * crown/crownHot/onCrownPress: 머리 위 오늘의 포인트 배지 (내 고양이 전용)
  */
 export default function Cat({
-  name = '나', fur, size = 120, drive = 'free',
+  name = '나', me = false, fur, size = 120, drive = 'free',
   fieldWidth = 360, deskX = 24, bottom = 42, onPoke,
-  hat = null, speech = null, petPulse = 0,
+  hat = null, speech = null, petPulse = 0, quiet = false,
   crown = null, crownHot = false, onCrownPress,
 }) {
   const [mode, setMode] = useState('idle');       // idle | walk | write | sleep
@@ -76,8 +77,7 @@ export default function Cat({
           c.speed = rand(64, 92);            // 걸음 감지 중엔 일어나서 신나게
         } else {
           const r = Math.random();
-          if (r < 0.42) { next = 'walk'; dur = rand(1.5, 4); c.speed = rand(28, 44); }
-          else if (r < 0.58) { next = 'write'; dur = rand(1.5, 3); }
+          if (r < 0.45) { next = 'walk'; dur = rand(1.5, 4); c.speed = rand(28, 44); }
           else { next = 'idle'; dur = rand(2, 5); }
         }
         if (next === 'walk') setDirIf(Math.random() < 0.5 ? -1 : 1);
@@ -87,8 +87,10 @@ export default function Cat({
 
       if (c.mode === 'walk') {
         c.x += c.dir * c.speed * 0.05;
-        const maxX = Math.max(8, fieldWidth - CAT_W - 8);
-        if (c.x <= 8) { c.x = 8; setDirIf(1); }
+        // 자기 책상 주변만 배회 — 겹침을 줄이고 '자기 자리'라는 교실 문법을 만든다
+        const minX = Math.max(8, deskX - fieldWidth * 0.28);
+        const maxX = Math.min(Math.max(8, fieldWidth - CAT_W - 8), deskX + fieldWidth * 0.28);
+        if (c.x <= minX) { c.x = minX; setDirIf(1); }
         if (c.x >= maxX) { c.x = maxX; setDirIf(-1); }
         xAnim.setValue(c.x);
       }
@@ -181,7 +183,7 @@ export default function Cat({
       style={[st.wrap, { bottom, zIndex: 200 - bottom, transform: [{ translateX: xAnim }] }]}
       pointerEvents="box-none"
     >
-      {crown && (
+      {crown && !quiet && (
         <Pressable
           style={[st.crown, crownHot && st.crownHot]}
           onPress={onCrownPress}
@@ -206,7 +208,11 @@ export default function Cat({
           )}
         </Animated.View>
       </Pressable>
-      <View style={st.tag}><Text style={st.tagText}>{name} · {label}</Text></View>
+      {!quiet && (
+        <View style={[st.tag, me && st.tagMe]}>
+          <Text style={st.tagText}>{me ? `나 · ${label}` : name}</Text>
+        </View>
+      )}
     </Animated.View>
   );
 }
@@ -281,6 +287,9 @@ const st = StyleSheet.create({
     paddingVertical: 2,
     borderRadius: 999,
     backgroundColor: 'rgba(255,255,255,0.78)',
+  },
+  tagMe: {
+    backgroundColor: 'rgba(255,236,179,0.92)',
   },
   tagText: {
     fontSize: 11,

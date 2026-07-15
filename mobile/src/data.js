@@ -29,9 +29,9 @@ export const DEFAULT_LINES = [
   { id: 'l3', text: '간식 주세요 🐟', p: 15 },
 ];
 
-/* 포인트 경제: 1만 포인트 = 별가루 100 */
-export const POINT_UNIT = 10000;
-export const STARDUST_PER_UNIT = 100;
+/* 포인트 경제: 1,000포인트 = 별가루 10 — 받기 버튼이 하루 여러 번 켜지는 마이크로 클레임 */
+export const POINT_UNIT = 1000;
+export const STARDUST_PER_UNIT = 10;
 export const BONUS_TAP = 1;      // 내 고양이 탭
 export const BONUS_PET = 5;      // 내가 쓰다듬기
 export const BONUS_FRIEND_PET = 10;  // 친구가 내 고양이를 쓰다듬어 줌

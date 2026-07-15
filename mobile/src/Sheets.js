@@ -23,9 +23,11 @@ function Sheet({ visible, title, onClose, children }) {
   );
 }
 
-/* ── 🎨 커스터마이징 ─────────────────────────────── */
+/* ── 🎨 꾸미기 (모자/털색 + 대사) ────────────────── */
 
-export function DressSheet({ visible, onClose, stardust, owned, equipped, onBuy, onEquip }) {
+export function DressSheet({
+  visible, onClose, stardust, owned, equipped, onBuy, onEquip, lines, onChangeLines,
+}) {
   const [msg, setMsg] = useState(null);
 
   const press = (kind, item) => {
@@ -56,11 +58,14 @@ export function DressSheet({ visible, onClose, stardust, owned, equipped, onBuy,
     );
   };
 
+  const setLine = (i, patch) =>
+    onChangeLines(lines.map((l, idx) => (idx === i ? { ...l, ...patch } : l)));
+
   return (
-    <Sheet visible={visible} title="커스터마이징" onClose={onClose}>
+    <Sheet visible={visible} title="꾸미기" onClose={onClose}>
       <View style={s.balanceRow}>
         <Text style={s.balance} testID="stardust-balance">⭐ {stardust.toLocaleString()}</Text>
-        <Text style={s.balanceHint}>1만 포인트마다 별가루 100</Text>
+        <Text style={s.balanceHint}>1,000포인트마다 별가루 10</Text>
       </View>
       {msg && <Text style={s.warn}>{msg}</Text>}
 
@@ -73,22 +78,8 @@ export function DressSheet({ visible, onClose, stardust, owned, equipped, onBuy,
       <View style={s.grid}>
         {FURS.map(f => <Item key={f.id} kind="furs" item={f} swatch />)}
       </View>
-    </Sheet>
-  );
-}
 
-/* ── 💬 대사 설정 ────────────────────────────────── */
-
-export function LinesSheet({ visible, onClose, lines, onChange }) {
-  const set = (i, patch) =>
-    onChange(lines.map((l, idx) => (idx === i ? { ...l, ...patch } : l)));
-
-  return (
-    <Sheet visible={visible} title="대사 설정" onClose={onClose}>
-      <Text style={s.hint}>
-        8초마다 각 대사가 설정한 확률(%)로 등장해요. 확률 합이 100%를 넘으면
-        비율대로 나눠 계산돼요.
-      </Text>
+      <Text style={s.section}>💬 대사 — 8초마다 설정한 확률(%)로 말해요</Text>
       {lines.map((l, i) => (
         <View key={l.id} style={s.lineRow}>
           <TextInput
@@ -96,27 +87,27 @@ export function LinesSheet({ visible, onClose, lines, onChange }) {
             value={l.text}
             placeholder="대사 입력…"
             placeholderTextColor="#9aa5b1"
-            onChangeText={t => set(i, { text: t })}
+            onChangeText={t => setLine(i, { text: t })}
             testID={`line-text-${i}`}
           />
           <Pressable
             style={s.step} hitSlop={6} testID={`line-dec-${i}`}
-            onPress={() => set(i, { p: Math.max(0, l.p - 5) })}
+            onPress={() => setLine(i, { p: Math.max(0, l.p - 5) })}
           ><Text style={s.stepText}>−</Text></Pressable>
           <Text style={s.prob}>{l.p}%</Text>
           <Pressable
             style={s.step} hitSlop={6} testID={`line-inc-${i}`}
-            onPress={() => set(i, { p: Math.min(95, l.p + 5) })}
+            onPress={() => setLine(i, { p: Math.min(95, l.p + 5) })}
           ><Text style={s.stepText}>＋</Text></Pressable>
           <Pressable
             hitSlop={8} testID={`line-del-${i}`}
-            onPress={() => onChange(lines.filter((_, idx) => idx !== i))}
+            onPress={() => onChangeLines(lines.filter((_, idx) => idx !== i))}
           ><Text style={s.del}>🗑</Text></Pressable>
         </View>
       ))}
       <Pressable
         style={s.addLine} testID="line-add"
-        onPress={() => onChange([...lines, { id: 'l' + Date.now(), text: '', p: 20 }])}
+        onPress={() => onChangeLines([...lines, { id: 'l' + Date.now(), text: '', p: 20 }])}
       >
         <Text style={s.addLineText}>＋ 대사 추가</Text>
       </Pressable>
@@ -135,7 +126,10 @@ export function PetsSheet({ visible, onClose, log }) {
       )}
       {log.map((e, i) => (
         <View key={i} style={s.petRow}>
-          <Text style={s.petText}>💗 <Text style={s.petName}>{e.name}</Text>님이 내 고양이를 쓰다듬었어요</Text>
+          <Text style={s.petText}>
+            💗 <Text style={s.petName}>{e.name}</Text>님이 내 고양이를 쓰다듬었어요
+            {e.demo ? <Text style={s.demoTag}>  데모</Text> : null}
+          </Text>
           <Text style={s.petTime}>{relTime(e.t)}</Text>
         </View>
       ))}
@@ -204,4 +198,5 @@ const s = StyleSheet.create({
   petText: { fontSize: 13.5, color: '#3D3345', flexShrink: 1 },
   petName: { fontWeight: '800' },
   petTime: { fontSize: 11.5, color: '#9aa5b1', marginLeft: 8 },
+  demoTag: { fontSize: 11, color: '#B4AC9C', fontWeight: '700' },
 });

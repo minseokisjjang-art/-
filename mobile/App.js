@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  Pressable, StyleSheet, Text, useWindowDimensions, View,
+  Animated, Pressable, StyleSheet, Text, useWindowDimensions, View,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
@@ -11,16 +11,16 @@ import useClock from './src/useClock';
 import useSteps from './src/useSteps';
 import { DAY, NIGHT, rand } from './src/theme';
 import {
-  BONUS_FRIEND_PET, BONUS_PET, BONUS_TAP, DEFAULT_LINES,
+  BONUS_PET, BONUS_TAP, DEFAULT_LINES,
   furById, hatById, POINT_UNIT, SPEAK_TICK_MS, STARDUST_PER_UNIT,
 } from './src/data';
-import { DressSheet, LinesSheet, PetsSheet } from './src/Sheets';
+import { DressSheet, PetsSheet } from './src/Sheets';
 
 const SOURCE_LABEL = {
   'checking': '센서 확인 중…',
   'ios-daily': '오늘 걸음',
   'android-live': '앱 실행 후 걸음',
-  'sim': '시뮬레이션',
+  'sim': '데모 걸음',
 };
 
 const CAT_W = 130;
@@ -39,11 +39,11 @@ export default function App() {
 
   const [drive, setDrive] = useState('free');
   const [standby, setStandby] = useState(false);
-  const [friends, setFriends] = useState(DEMO_FRIENDS.map(f => ({ ...f, drive: 'free' })));
+  const [friends, setFriends] = useState(DEMO_FRIENDS.map(f => ({ ...f, drive: 'free', until: 0 })));
 
   /* 포인트/보상 경제 */
-  const [bonus, setBonus] = useState(0);            // 오늘 상호작용 보너스
-  const [claimedUnits, setClaimedUnits] = useState(0); // 오늘 이미 별가루로 바꾼 1만 단위 수
+  const [bonus, setBonus] = useState(0);               // 오늘 상호작용 보너스
+  const [claimedUnits, setClaimedUnits] = useState(0); // 오늘 이미 별가루로 바꾼 단위 수
   const [stardust, setStardust] = useState(0);
   const [owned, setOwned] = useState({ hats: [], furs: ['fur-cream'] });
   const [equipped, setEquipped] = useState({ hat: null, fur: 'fur-cream' });
@@ -54,13 +54,19 @@ export default function App() {
   const [petLog, setPetLog] = useState([]);
   const [unreadPets, setUnreadPets] = useState(0);
   const [petPulse, setPetPulse] = useState(0);
-  const [sheet, setSheet] = useState(null);         // 'dress' | 'lines' | 'pets' | null
+  const [sheet, setSheet] = useState(null);            // 'dress' | 'pets' | null
+
+  /* 즉각 피드백 */
+  const [flash, setFlash] = useState(null);            // 포인트 +N 표시
+  const [toast, setToast] = useState(null);            // 별가루 획득 토스트
 
   const linesRef = useRef(lines);
   useEffect(() => { linesRef.current = lines; }, [lines]);
   const loaded = useRef(false);
+  const dayRef = useRef(new Date().toDateString());
+  const timers = useRef({});
 
-  /* ── 저장/복원 ─────────────────────────────── */
+  /* ── 저장/복원 (데모 쓰다듬은 영속화에서 제외) ── */
   useEffect(() => {
     (async () => {
       try {
@@ -72,7 +78,7 @@ export default function App() {
           setEquipped(s.equipped ?? { hat: null, fur: 'fur-cream' });
           setLines(s.lines?.length ? s.lines : DEFAULT_LINES);
           setPetLog(s.petLog ?? []);
-          if (s.date === new Date().toDateString()) {
+          if (s.date === dayRef.current) {
             setBonus(s.bonus ?? 0);
             setClaimedUnits(s.claimedUnits ?? 0);
           }
@@ -85,12 +91,29 @@ export default function App() {
   useEffect(() => {
     if (!loaded.current) return;
     AsyncStorage.setItem(SAVE_KEY, JSON.stringify({
-      date: new Date().toDateString(),
-      bonus, claimedUnits, stardust, owned, equipped, lines, petLog,
+      date: dayRef.current,
+      bonus, claimedUnits, stardust, owned, equipped, lines,
+      petLog: petLog.filter(e => !e.demo),
     })).catch(() => {});
   }, [bonus, claimedUnits, stardust, owned, equipped, lines, petLog]);
 
-  /* ── 활동 → 고양이 행동 방향 ────────────────── */
+  /* 자정 롤오버 — 스탠바이로 밤새 켜둬도 다음날 보상이 깨지지 않게 리셋 */
+  useEffect(() => {
+    const iv = setInterval(() => {
+      const today = new Date().toDateString();
+      if (today !== dayRef.current) {
+        dayRef.current = today;
+        setBonus(0);
+        setClaimedUnits(0);
+      }
+    }, 60000);
+    return () => clearInterval(iv);
+  }, []);
+
+  /* ── 활동 → 고양이 행동 방향 ──────────────────
+     화면을 누르고 있는 동안 = 봉고캣의 '입력' → 필기가 최우선 */
+  const holdRef = useRef(false);
+  const holdUntilRef = useRef(0);
   const touchAt = useRef(Date.now());
   const stepAt = useRef(0);
   useEffect(() => { stepAt.current = lastStepAt; }, [lastStepAt]);
@@ -99,13 +122,14 @@ export default function App() {
     const iv = setInterval(() => {
       const now = Date.now();
       let next = 'free';
-      if (now - stepAt.current < 45000) next = 'active';
+      if (holdRef.current || now < holdUntilRef.current) next = 'bongo';
+      else if (now - stepAt.current < 45000) next = 'active';
       else if (
         now - touchAt.current > 120000 &&
         (stepAt.current === 0 || now - stepAt.current > 120000)
       ) next = 'sleep';
       setDrive(d => (d === next ? d : next));
-    }, 1000);
+    }, 500);
     return () => clearInterval(iv);
   }, []);
 
@@ -125,28 +149,32 @@ export default function App() {
     return () => clearInterval(iv);
   }, []);
 
-  /* ── 데모 친구: 활동 시뮬레이션 + 가끔 내 고양이를 쓰다듬어 줌 ── */
+  /* ── 데모 친구: 20~45초 지속되는 상태 머신 (플립 소음 제거) ── */
   useEffect(() => {
     const iv = setInterval(() => {
+      const now = Date.now();
       setFriends(fs => fs.map(f => {
+        if (now < f.until) {
+          const inc = f.drive === 'active' ? Math.floor(rand(3, 10))
+            : f.drive === 'bongo' ? Math.floor(rand(1, 5)) : 0;
+          return inc ? { ...f, score: f.score + inc } : f;
+        }
         const r = Math.random();
-        if (r < 0.35) return { ...f, drive: 'active', score: f.score + Math.floor(rand(5, 30)) };
-        if (r < 0.60) return { ...f, drive: 'bongo', score: f.score + Math.floor(rand(2, 9)) };
-        return { ...f, drive: 'free' };
+        const drive = r < 0.3 ? 'active' : r < 0.6 ? 'bongo' : 'free';
+        return { ...f, drive, until: now + rand(20000, 45000) };
       }));
     }, 3000);
     return () => clearInterval(iv);
   }, []);
 
+  /* 데모 쓰다듬 — demo 표기, 보너스 미적립, 영속화 제외 (점수판 정직성) */
   const friendPets = (name) => {
-    setPetLog(l => [{ name, t: Date.now() }, ...l].slice(0, 50));
+    setPetLog(l => [{ name, t: Date.now(), demo: true }, ...l].slice(0, 50));
     setUnreadPets(u => u + 1);
-    setBonus(b => b + BONUS_FRIEND_PET);
     setPetPulse(p => p + 1);
   };
 
   useEffect(() => {
-    // 데모: 시작 8초 뒤 민지가 인사로 쓰다듬고, 이후 이따금 랜덤
     const first = setTimeout(() => friendPets('민지'), 8000);
     const iv = setInterval(() => {
       if (Math.random() < 0.4) {
@@ -156,21 +184,49 @@ export default function App() {
     return () => { clearTimeout(first); clearInterval(iv); };
   }, []);
 
-  /* ── 스탠바이(잠금화면 모드) ─────────────────── */
+  /* ── 스탠바이(시계 모드): 화면 유지 + 안내문 페이드아웃 ── */
+  const hintOpacity = useRef(new Animated.Value(1)).current;
   useEffect(() => {
     if (!standby) return;
     activateKeepAwakeAsync('standby').catch(() => {});
-    return () => { deactivateKeepAwake('standby').catch(() => {}); };
-  }, [standby]);
+    hintOpacity.setValue(1);
+    const anim = Animated.sequence([
+      Animated.delay(5000),
+      Animated.timing(hintOpacity, { toValue: 0, duration: 800, useNativeDriver: false }),
+    ]);
+    anim.start();
+    return () => { anim.stop(); deactivateKeepAwake('standby').catch(() => {}); };
+  }, [standby, hintOpacity]);
 
-  /* ── 포인트 = 걸음 + 상호작용, 1만마다 별가루 ─── */
+  /* ── 포인트 = 걸음 + 상호작용, 1,000마다 별가루 ── */
   const points = steps + bonus;
-  const claimable = Math.floor(points / POINT_UNIT) - claimedUnits;
+  const claimable = Math.max(0, Math.floor(points / POINT_UNIT) - claimedUnits);
+
+  /* 포인트가 오를 때 +N 플래시 — 걷기→숫자 상승의 인과를 눈에 보이게 */
+  const prevPoints = useRef(null);
+  useEffect(() => {
+    if (prevPoints.current === null) { prevPoints.current = points; return; }
+    const diff = points - prevPoints.current;
+    prevPoints.current = points;
+    if (diff > 0) {
+      setFlash({ n: diff, id: Date.now() });
+      clearTimeout(timers.current.flash);
+      timers.current.flash = setTimeout(() => setFlash(null), 1200);
+    }
+  }, [points]);
+
+  useEffect(() => () => Object.values(timers.current).forEach(clearTimeout), []);
 
   const claim = () => {
     if (claimable <= 0) return;
-    setStardust(s => s + claimable * STARDUST_PER_UNIT);
+    const gain = claimable * STARDUST_PER_UNIT;
+    setStardust(s => {
+      setToast({ text: `⭐ +${gain} 획득 · 잔고 ${(s + gain).toLocaleString()}`, id: Date.now() });
+      return s + gain;
+    });
     setClaimedUnits(u => u + claimable);
+    clearTimeout(timers.current.toast);
+    timers.current.toast = setTimeout(() => setToast(null), 1800);
   };
 
   const buy = (kind, item) => {
@@ -195,7 +251,7 @@ export default function App() {
 
   /* ── 점수판/책상 배치 ────────────────────────── */
   const rows = [
-    { id: 'me', name: '나', score: points, me: true, active: drive === 'active' },
+    { id: 'me', name: '나', score: points, me: true, active: drive === 'active' || drive === 'bongo' },
     ...friends.map(f => ({ id: f.id, name: `${f.name} (데모)`, score: f.score, active: f.drive !== 'free' })),
   ].sort((a, b) => b.score - a.score);
 
@@ -215,7 +271,23 @@ export default function App() {
       <StatusBar style={standby ? 'light' : 'dark'} hidden={standby} />
 
       <View style={st.sceneWrap}>
-        <Scene night={standby} time={time} dateStr={dateStr} rows={rows} desks={desks}>
+        <Scene
+          night={standby}
+          time={time}
+          dateStr={dateStr}
+          subline={standby ? `👟 ${steps.toLocaleString()} · 오늘 ${points.toLocaleString()} P` : null}
+          rows={rows}
+          desks={desks}
+        >
+          {/* 봉고캣의 입력 번역: 화면을 누르고 있는 동안 내 고양이가 필기 */}
+          {!standby && (
+            <Pressable
+              style={StyleSheet.absoluteFill}
+              onPressIn={() => { holdRef.current = true; touchAt.current = Date.now(); }}
+              onPressOut={() => { holdRef.current = false; holdUntilRef.current = Date.now() + 1500; }}
+            />
+          )}
+          {/* 배경 탭 → 스탠바이 종료 */}
           {standby && (
             <Pressable style={StyleSheet.absoluteFill} onPress={() => setStandby(false)} />
           )}
@@ -223,13 +295,25 @@ export default function App() {
           {!standby && (
             <View style={[st.stepsBadge, { backgroundColor: T.card }]}>
               <Text style={[st.stepsNum, { color: T.ink }]}>👟 {steps.toLocaleString()}</Text>
-              <Text style={st.stepsLabel}>{SOURCE_LABEL[source]}</Text>
+              <Text style={st.starNum}>⭐ {stardust.toLocaleString()}</Text>
+              {(source === 'sim' || source === 'checking') && (
+                <Text style={st.stepsLabel}>{SOURCE_LABEL[source]}</Text>
+              )}
             </View>
           )}
 
-          {/* 내 고양이 — 머리 위 오늘의 포인트, 1만마다 별가루 받기 */}
+          {!standby && flash && (
+            <Text style={st.flash}>＋{flash.n.toLocaleString()} P</Text>
+          )}
+          {toast && (
+            <View style={st.toast}><Text style={st.toastText}>{toast.text}</Text></View>
+          )}
+
+          {/* 내 고양이 */}
           <Cat
             name="나"
+            me
+            quiet={standby}
             fur={furById(equipped.fur).color}
             hat={hatById(equipped.hat)?.emoji}
             drive={drive}
@@ -251,6 +335,7 @@ export default function App() {
             <Cat
               key={f.id}
               name={f.name}
+              quiet={standby}
               fur={f.fur}
               size={104}
               drive={f.drive}
@@ -260,8 +345,18 @@ export default function App() {
             />
           ))}
 
+          {/* 스탠바이 중에도 보상은 고정 버튼으로 받을 수 있게 (움직이는 크라운 대체) */}
+          {standby && claimable > 0 && (
+            <Pressable style={st.standbyClaim} onPress={claim} testID="standby-claim">
+              <Text style={st.standbyClaimText}>
+                ✨ 별가루 받기 +{(claimable * STARDUST_PER_UNIT).toLocaleString()}
+              </Text>
+            </Pressable>
+          )}
           {standby && (
-            <Text style={st.standbyHint}>화면이 꺼지지 않아요 · 탭하면 돌아가요</Text>
+            <Animated.Text style={[st.standbyHint, { opacity: hintOpacity }]}>
+              화면이 꺼지지 않아요 · 탭하면 돌아가요
+            </Animated.Text>
           )}
         </Scene>
       </View>
@@ -272,20 +367,20 @@ export default function App() {
             <Pressable style={st.chip} onPress={() => setSheet('dress')}>
               <Text style={st.chipText}>🎨 꾸미기</Text>
             </Pressable>
-            <Pressable style={st.chip} onPress={() => setSheet('lines')}>
-              <Text style={st.chipText}>💬 대사 설정</Text>
-            </Pressable>
             <Pressable style={st.chip} onPress={() => { setSheet('pets'); setUnreadPets(0); }}>
-              <Text style={st.chipText}>
-                💗 쓰다듬 기록{unreadPets > 0 ? ` (${unreadPets})` : ''}
-              </Text>
+              <Text style={st.chipText}>💗 쓰다듬 기록</Text>
+              {unreadPets > 0 && (
+                <View style={st.dot} testID="pet-dot">
+                  <Text style={st.dotText}>{unreadPets}</Text>
+                </View>
+              )}
             </Pressable>
             <Pressable style={st.chip} onPress={() => setStandby(true)}>
-              <Text style={st.chipText}>🌙 스탠바이</Text>
+              <Text style={st.chipText}>🌙 시계 모드</Text>
             </Pressable>
             {source === 'sim' && (
-              <Pressable style={st.chip} onPress={() => addSteps(500)}>
-                <Text style={st.chipText}>👟 ＋500 걸음</Text>
+              <Pressable style={[st.chip, st.chipDemo]} onPress={() => addSteps(500)}>
+                <Text style={st.chipText}>데모: ＋500 걸음</Text>
               </Pressable>
             )}
           </View>
@@ -300,12 +395,8 @@ export default function App() {
         equipped={equipped}
         onBuy={buy}
         onEquip={equip}
-      />
-      <LinesSheet
-        visible={sheet === 'lines'}
-        onClose={() => setSheet(null)}
         lines={lines}
-        onChange={setLines}
+        onChangeLines={setLines}
       />
       <PetsSheet
         visible={sheet === 'pets'}
@@ -325,10 +416,30 @@ const st = StyleSheet.create({
     alignItems: 'flex-end',
   },
   stepsNum: { fontSize: 16, fontWeight: '800', fontVariant: ['tabular-nums'] },
+  starNum: { fontSize: 13, fontWeight: '800', color: '#B8860B', marginTop: 1, fontVariant: ['tabular-nums'] },
   stepsLabel: { fontSize: 10.5, fontWeight: '600', color: '#8a94a6', marginTop: 1 },
+  flash: {
+    position: 'absolute', top: 78, right: 14,
+    fontSize: 14, fontWeight: '800', color: '#3E8E52',
+    fontVariant: ['tabular-nums'],
+  },
+  toast: {
+    position: 'absolute', top: 10, alignSelf: 'center',
+    backgroundColor: 'rgba(61,51,69,0.92)',
+    borderRadius: 999, paddingHorizontal: 16, paddingVertical: 8,
+    zIndex: 50,
+  },
+  toastText: { color: '#FFE9A8', fontSize: 13.5, fontWeight: '800' },
+  standbyClaim: {
+    position: 'absolute', bottom: 46, alignSelf: 'center',
+    backgroundColor: '#FFE9A8', borderWidth: 1.5, borderColor: '#E8A93C',
+    borderRadius: 999, paddingHorizontal: 20, paddingVertical: 12,
+    zIndex: 300,
+  },
+  standbyClaimText: { fontSize: 15, fontWeight: '800', color: '#8A5A2B' },
   standbyHint: {
-    position: 'absolute', bottom: 10, alignSelf: 'center',
-    fontSize: 12, color: 'rgba(242,245,251,0.6)', fontWeight: '600',
+    position: 'absolute', bottom: 14, alignSelf: 'center',
+    fontSize: 12, color: 'rgba(242,245,251,0.85)', fontWeight: '600',
   },
   panel: {
     backgroundColor: 'rgba(253,251,246,0.97)',
@@ -342,5 +453,16 @@ const st = StyleSheet.create({
     borderRadius: 999, paddingHorizontal: 13, paddingVertical: 8,
     borderWidth: StyleSheet.hairlineWidth, borderColor: '#E3E0D6',
   },
+  chipDemo: {
+    borderWidth: 1, borderStyle: 'dashed', borderColor: '#C9C2B2',
+    backgroundColor: 'transparent',
+  },
   chipText: { fontSize: 13, fontWeight: '700', color: '#3D3345' },
+  dot: {
+    position: 'absolute', top: -5, right: -3,
+    minWidth: 17, height: 17, borderRadius: 9,
+    backgroundColor: '#E4574B', alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: 4,
+  },
+  dotText: { color: '#FFF', fontSize: 10, fontWeight: '800' },
 });
