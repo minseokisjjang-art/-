@@ -4,28 +4,29 @@ import { CAT } from './theme';
 /*
  * 고양이 SVG — 기존 PWA의 햄스터 SVG(js/app.js catSVG)를 고양이로 개조해 포팅.
  * mood:  'open'(평상) | 'happy'(반응) | 'sleep'(낮잠)
- * pawUp: null(양발 내림) | 0 | 1  — 봉고 연주 시 좌우 앞발을 번갈아 든다
+ * pawUp: null(양발 내림) | 0 | 1  — 필기/봉고 시 좌우 앞발을 번갈아 든다
+ * fur:   털색 (친구 고양이 구분용)
  */
-export function CatBody({ size = 120, mood = 'open', pawUp = null }) {
+export function CatBody({ size = 120, mood = 'open', pawUp = null, fur = CAT.fur }) {
   const eyesOpen = mood === 'open';
   return (
     <Svg width={size} height={size * (104 / 120)} viewBox="0 0 120 104">
       {/* 꼬리 */}
       <Path
         d="M100 82 q20 -4 16 -26" fill="none"
-        stroke={CAT.fur} strokeWidth="9" strokeLinecap="round"
+        stroke={fur} strokeWidth="9" strokeLinecap="round"
       />
       <Path
         d="M100 82 q20 -4 16 -26" fill="none"
         stroke={CAT.line} strokeWidth="1.6" strokeLinecap="round" opacity="0.35"
       />
       {/* 귀 (뾰족) */}
-      <Path d="M26 34 L34 6 L54 22 Z" fill={CAT.fur} stroke={CAT.line} strokeWidth="2" strokeLinejoin="round" />
-      <Path d="M94 34 L86 6 L66 22 Z" fill={CAT.fur} stroke={CAT.line} strokeWidth="2" strokeLinejoin="round" />
+      <Path d="M26 34 L34 6 L54 22 Z" fill={fur} stroke={CAT.line} strokeWidth="2" strokeLinejoin="round" />
+      <Path d="M94 34 L86 6 L66 22 Z" fill={fur} stroke={CAT.line} strokeWidth="2" strokeLinejoin="round" />
       <Path d="M33 28 L37 13 L48 22 Z" fill={CAT.innerEar} opacity="0.8" />
       <Path d="M87 28 L83 13 L72 22 Z" fill={CAT.innerEar} opacity="0.8" />
       {/* 몸통(머리 겸용, 봉고캣 실루엣) */}
-      <Ellipse cx="60" cy="62" rx="44" ry="38" fill={CAT.fur} stroke={CAT.line} strokeWidth="2" />
+      <Ellipse cx="60" cy="62" rx="44" ry="38" fill={fur} stroke={CAT.line} strokeWidth="2" />
       {/* 배 */}
       <Ellipse cx="60" cy="80" rx="25" ry="16" fill="#FFFFFF" opacity="0.5" />
       {/* 눈 */}
@@ -55,10 +56,10 @@ export function CatBody({ size = 120, mood = 'open', pawUp = null }) {
       </G>
       {/* 앞발 — 봉고 연주 시 번갈아 든다 */}
       <G transform={pawUp === 0 ? 'translate(0,-11)' : undefined}>
-        <Ellipse cx="44" cy="94" rx="9" ry="6.5" fill={CAT.fur} stroke={CAT.line} strokeWidth="2" />
+        <Ellipse cx="44" cy="94" rx="9" ry="6.5" fill={fur} stroke={CAT.line} strokeWidth="2" />
       </G>
       <G transform={pawUp === 1 ? 'translate(0,-11)' : undefined}>
-        <Ellipse cx="76" cy="94" rx="9" ry="6.5" fill={CAT.fur} stroke={CAT.line} strokeWidth="2" />
+        <Ellipse cx="76" cy="94" rx="9" ry="6.5" fill={fur} stroke={CAT.line} strokeWidth="2" />
       </G>
     </Svg>
   );
