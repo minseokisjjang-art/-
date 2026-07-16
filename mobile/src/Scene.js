@@ -54,6 +54,7 @@ export default function Scene({ night = false, time, dateStr, subline, rows = []
           <View key={r.id} style={st.row}>
             <Text style={[st.rowName, { color: T.chalk }]} numberOfLines={1}>
               {r.me ? '★ ' : ''}{r.name}
+              {r.state ? <Text style={st.rowState}>  {r.state}</Text> : null}
             </Text>
             <Text style={[st.rowScore, { color: T.chalk }]} testID={`score-${r.id}`}>
               {r.score.toLocaleString()}<Text style={st.rowUp}>{r.active ? ' ▲' : '   '}</Text>
@@ -107,6 +108,7 @@ const st = StyleSheet.create({
     paddingVertical: 2.5,
   },
   rowName: { fontSize: 15, fontWeight: '700', flexShrink: 1 },
+  rowState: { fontSize: 13 },
   rowScore: { fontSize: 17, fontWeight: '800', fontVariant: ['tabular-nums'] },
   rowUp: { fontSize: 12, color: '#A8E6B0' },
   floor: {

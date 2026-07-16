@@ -249,10 +249,21 @@ export default function App() {
     setBonus(b => b + (kind === 'pet' ? BONUS_PET : BONUS_TAP));
   };
 
-  /* ── 점수판/책상 배치 ────────────────────────── */
+  /* ── 점수판/책상 배치 ────────────────────────────
+     점수 옆에 '지금 상태'를 함께 — 칠판이 경쟁판이 아니라 기척판이 되도록 */
+  const stateEmoji = d =>
+    d === 'bongo' ? '✍️' : d === 'active' ? '👟' : d === 'sleep' ? '💤' : '';
   const rows = [
-    { id: 'me', name: '나', score: points, me: true, active: drive === 'active' || drive === 'bongo' },
-    ...friends.map(f => ({ id: f.id, name: `${f.name} (데모)`, score: f.score, active: f.drive !== 'free' })),
+    {
+      id: 'me', name: '나', score: points, me: true,
+      state: stateEmoji(drive),
+      active: drive === 'active' || drive === 'bongo',
+    },
+    ...friends.map(f => ({
+      id: f.id, name: `${f.name} (데모)`, score: f.score,
+      state: stateEmoji(f.drive),
+      active: f.drive !== 'free',
+    })),
   ].sort((a, b) => b.score - a.score);
 
   const desks = {
