@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getStepProvider, StepProvider, StepProviderKind } from './stepProvider';
+import { getStepProvider, resetStepProvider, StepProvider, StepProviderKind } from './stepProvider';
 import type { Backend } from '../backend/types';
 import type { PresenceState } from '../types';
 
@@ -31,6 +31,8 @@ export interface Activity {
   providerKind: StepProviderKind;
   /** 서버 반영 전의 세션 활동(터치+걸음) — 카운터 즉시 반응용 */
   pendingLive: number;
+  /** 걸음 다시 연결 (설정 화면) — 성공 여부 반환 */
+  reconnectSteps: () => Promise<boolean>;
   recordTouch: () => void;
   /** 데모(웹) 전용 */
   addSimSteps: (n: number) => void;
@@ -69,6 +71,24 @@ export function useActivity(backend: Backend, enabled: boolean): Activity {
     pendingSteps.current += n;
     recentSteps.current += n;
     setPendingLive(v => v + n);
+  }, []);
+
+  const reconnectSteps = useCallback(async () => {
+    resetStepProvider();
+    const p = await getStepProvider();
+    provider.current = p;
+    setProviderKind(p.kind);
+    const ok = await Promise.race([
+      p.requestPermission(),
+      new Promise<boolean>(r => setTimeout(() => r(false), 12000)),
+    ]).catch(() => false);
+    // 권한 직후 즉시 한 번 읽어 상태 반영
+    const n = await p.getRecentSteps(WALK_WINDOW).catch(() => null);
+    if (n !== null && n !== undefined) {
+      recentSteps.current = n;
+      lastObservedRecent.current = n;
+    }
+    return ok;
   }, []);
 
   /* provider 준비 + 캐치업:
@@ -197,5 +217,5 @@ export function useActivity(backend: Backend, enabled: boolean): Activity {
     return () => { clearInterval(iv); sub.remove(); void flush(); };
   }, [enabled, backend]);
 
-  return { myState, providerKind, pendingLive, recordTouch, addSimSteps, addSimTouches };
+  return { myState, providerKind, pendingLive, reconnectSteps, recordTouch, addSimSteps, addSimTouches };
 }

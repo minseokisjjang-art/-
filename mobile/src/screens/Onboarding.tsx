@@ -73,7 +73,13 @@ export function Onboarding({
 
   const ensureProfile = async () => {
     if (existingProfile) return;
-    await backend.createProfile(nickname.trim(), color);
+    // 서버 응답이 없어도 온보딩이 영원히 멈추지 않게 15초 타임아웃
+    await Promise.race([
+      backend.createProfile(nickname.trim(), color),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 15000)),
+    ]).catch(() => {
+      showToast('서버 연결이 불안정해요 — 인터넷 확인 후 다음 화면에서 다시 시도해 주세요');
+    });
   };
 
   const createRoom = async () => {

@@ -194,6 +194,7 @@ export function ClassroomScreen({
         onProfileChanged={onProfileChanged}
         onLeft={() => { setSheet(null); onLeftClassroom(); }}
         sensorKind={activity.providerKind}
+        onReconnectSteps={activity.reconnectSteps}
       />
     </View>
   );

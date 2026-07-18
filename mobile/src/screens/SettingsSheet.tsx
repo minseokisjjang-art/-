@@ -7,6 +7,7 @@ import type { CatColor, Profile } from '../types';
 import { CAT_COLORS, T } from '../theme';
 import { CatBody } from '../components/CatSvg';
 import { Button, Sheet, showToast } from '../components/ui';
+import { APP_VERSION } from '../version';
 
 /* 설정 — 닉네임/색, 상태·카운터 공개, 화면 항상 켜기, 교실 나가기 */
 
@@ -30,13 +31,14 @@ const SENSOR_LABEL: Record<string, string> = {
 };
 
 export function SettingsSheet({
-  visible, onClose, backend, profile, onProfileChanged, onLeft, sensorKind,
+  visible, onClose, backend, profile, onProfileChanged, onLeft, sensorKind, onReconnectSteps,
 }: {
   visible: boolean; onClose: () => void;
   backend: Backend; profile: Profile;
   onProfileChanged: (p: Profile) => void;
   onLeft: () => void;
   sensorKind?: string;
+  onReconnectSteps?: () => Promise<boolean>;
 }) {
   const [nickname, setNickname] = useState(profile.nickname);
   const [confirmLeave, setConfirmLeave] = useState(false);
@@ -130,6 +132,26 @@ export function SettingsSheet({
         />
       </View>
 
+      {/* 걸음 다시 연결 */}
+      {onReconnectSteps && (
+        <View style={s.switchRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={s.switchTitle}>걸음 다시 연결하기 👟</Text>
+            <Text style={s.switchHint}>
+              걸음이 안 잡힐 때 눌러주세요 — 권한 창이 다시 뜹니다
+            </Text>
+          </View>
+          <Button
+            label="연결" kind="soft" testID="set-reconnect-steps"
+            style={{ paddingVertical: 9, paddingHorizontal: 14 }}
+            onPress={async () => {
+              const ok = await onReconnectSteps();
+              showToast(ok ? '걸음이 연결됐어요! 걸어보세요 🐾' : '연결 실패 — 삼성헬스의 헬스 커넥트 공유 설정을 확인해 주세요');
+            }}
+          />
+        </View>
+      )}
+
       {/* 화면 항상 켜기 (책상 모드) */}
       <View style={s.switchRow}>
         <View style={{ flex: 1 }}>
@@ -172,6 +194,7 @@ export function SettingsSheet({
       <Text style={s.mode}>
         {backend.kind === 'supabase' ? '🌐 서버에 연결되어 있어요' : '📴 오프라인(로컬) 모드 — docs/SETUP-SUPABASE.md 참고'}
         {sensorKind ? `  ·  👟 ${SENSOR_LABEL[sensorKind] ?? sensorKind}` : ''}
+        {`  ·  잘지냥 v${APP_VERSION}`}
       </Text>
     </Sheet>
   );
