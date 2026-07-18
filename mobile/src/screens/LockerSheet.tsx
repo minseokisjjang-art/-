@@ -184,7 +184,7 @@ export function LockerSheet({
         <View style={s.wallet}>
           <View style={s.walletTop}>
             <Text style={s.balance} testID="star-balance">⭐ {wallet.balance.toLocaleString()}</Text>
-            <Text style={s.earned}>오늘 ⭐{wallet.earnedToday}/{wallet.dailyCap}</Text>
+            <Text style={s.earned} testID="earned-today">오늘 ⭐{wallet.earnedToday}/{wallet.dailyCap}</Text>
           </View>
           <ProgressBar value={wallet.earnedToday} max={wallet.dailyCap} />
           <Text style={s.walletHint}>

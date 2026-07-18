@@ -1,12 +1,25 @@
-import React, { useState } from 'react';
-import { Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { Platform, Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import type { Backend } from '../backend/types';
 import type { CatColor, Profile } from '../types';
 import { CAT_COLORS, T } from '../theme';
 import { CatBody } from '../components/CatSvg';
 import { Button, Sheet, showToast } from '../components/ui';
 
-/* 설정 — 닉네임/색, 상태·카운터 공개, 교실 나가기 */
+/* 설정 — 닉네임/색, 상태·카운터 공개, 화면 항상 켜기, 교실 나가기 */
+
+const AWAKE_KEY = 'jjn-keep-awake';
+
+/** 저장된 '화면 항상 켜기' 설정을 앱 시작 시 복원 */
+export async function restoreKeepAwake(): Promise<void> {
+  try {
+    if ((await AsyncStorage.getItem(AWAKE_KEY)) === '1') {
+      await activateKeepAwakeAsync('desk');
+    }
+  } catch {}
+}
 
 export function SettingsSheet({
   visible, onClose, backend, profile, onProfileChanged, onLeft,
@@ -18,6 +31,24 @@ export function SettingsSheet({
 }) {
   const [nickname, setNickname] = useState(profile.nickname);
   const [confirmLeave, setConfirmLeave] = useState(false);
+  const [keepAwake, setKeepAwake] = useState(false);
+
+  useEffect(() => {
+    void AsyncStorage.getItem(AWAKE_KEY).then(v => setKeepAwake(v === '1'));
+  }, []);
+
+  const toggleAwake = async (v: boolean) => {
+    setKeepAwake(v);
+    try {
+      if (v) {
+        await activateKeepAwakeAsync('desk');
+        showToast('책상에 세워두면 교실이 계속 보여요 📌');
+      } else {
+        await deactivateKeepAwake('desk');
+      }
+      await AsyncStorage.setItem(AWAKE_KEY, v ? '1' : '0');
+    } catch {}
+  };
 
   const patch = async (p: Partial<Profile>) => {
     const next = await backend.updateProfile(p);
@@ -87,6 +118,25 @@ export function SettingsSheet({
           trackColor={{ true: T.accent, false: '#D9D2C2' }}
           thumbColor="#FFFFFF"
           testID="set-share-counter"
+        />
+      </View>
+
+      {/* 화면 항상 켜기 (책상 모드) */}
+      <View style={s.switchRow}>
+        <View style={{ flex: 1 }}>
+          <Text style={s.switchTitle}>화면 항상 켜기 📌</Text>
+          <Text style={s.switchHint}>
+            {Platform.OS === 'android'
+              ? '책상에 세워두는 모드. 전원 버튼을 눌러도 잠금화면 위에 교실이 떠요'
+              : '책상에 세워두는 모드. 앱이 켜져 있는 동안 화면이 꺼지지 않아요'}
+          </Text>
+        </View>
+        <Switch
+          value={keepAwake}
+          onValueChange={v => { void toggleAwake(v); }}
+          trackColor={{ true: T.accent, false: '#D9D2C2' }}
+          thumbColor="#FFFFFF"
+          testID="set-keep-awake"
         />
       </View>
 

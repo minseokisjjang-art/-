@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getStepProvider, StepProvider, StepProviderKind } from './stepProvider';
 import type { Backend } from '../backend/types';
 import type { PresenceState } from '../types';
@@ -20,6 +21,9 @@ const TOUCH_WINDOW = 5 * 60 * 1000;
 const JUDGE_EVERY = 15 * 1000;
 const SEND_MIN_GAP = 60 * 1000;
 const STEP_POLL = 60 * 1000;
+const CATCHUP_MAX = 24 * 60 * 60 * 1000;   // 앱이 꺼져 있던 걸음 캐치업 상한 (24시간)
+const FLUSH_STEP_CHUNK = 2000;             // 서버 상식 상한과 동일 — 한 번에 이만큼씩만 전송
+const LAST_SYNC_KEY = 'jjn-last-step-sync';
 
 export interface Activity {
   myState: Exclude<PresenceState, 'private'>;
@@ -60,7 +64,10 @@ export function useActivity(backend: Backend, enabled: boolean): Activity {
     recentSteps.current += n;
   }, []);
 
-  /* provider 준비 */
+  /* provider 준비 + 캐치업:
+     앱이 꺼져 있던 동안(폰은 켜짐)의 걸음은 OS(iOS CMPedometer / Health Connect)가
+     계속 집계하므로, 다시 열 때 마지막 동기화 이후 구간을 한 번에 읽어 적립한다.
+     (터치는 앱이 꺼지면 기록 불가 — 백그라운드 추적을 하지 않는 프라이버시 원칙) */
   useEffect(() => {
     if (!enabled) return;
     let alive = true;
@@ -69,6 +76,27 @@ export function useActivity(backend: Backend, enabled: boolean): Activity {
       if (!alive) return;
       provider.current = p;
       setProviderKind(p.kind);
+
+      if (p.kind === 'ios' || p.kind === 'android-hc') {
+        try {
+          const raw = await AsyncStorage.getItem(LAST_SYNC_KEY);
+          const last = raw ? parseInt(raw, 10) : 0;
+          if (last > 0) {
+            const windowMs = Math.min(Date.now() - last, CATCHUP_MAX);
+            if (windowMs > WALK_WINDOW) {
+              const n = await p.getRecentSteps(windowMs);
+              if (alive && n !== null && n > 0) pendingSteps.current += n;
+              // 최근 10분 구간 이중 적립 방지 — 관측 기준선을 현재값으로 맞춘다
+              const recent = await p.getRecentSteps(WALK_WINDOW);
+              if (alive && recent !== null) {
+                lastObservedRecent.current = recent;
+                recentSteps.current = recent;
+              }
+            }
+          }
+          await AsyncStorage.setItem(LAST_SYNC_KEY, String(Date.now()));
+        } catch {}
+      }
     })();
     return () => { alive = false; };
   }, [enabled]);
@@ -87,6 +115,7 @@ export function useActivity(backend: Backend, enabled: boolean): Activity {
       const delta = Math.max(0, n - lastObservedRecent.current);
       lastObservedRecent.current = n;
       pendingSteps.current += delta;
+      void AsyncStorage.setItem(LAST_SYNC_KEY, String(Date.now())).catch(() => {});
     };
     void poll();
     const iv = setInterval(poll, STEP_POLL);
@@ -137,8 +166,9 @@ export function useActivity(backend: Backend, enabled: boolean): Activity {
   useEffect(() => {
     if (!enabled) return;
     const flush = async () => {
-      const s = Math.floor(pendingSteps.current / 100) * 100;
-      const t = Math.floor(pendingTouches.current / 100) * 100;
+      // 서버의 회당 상식 상한(2,000보)에 맞춰 캐치업 걸음도 잘리지 않게 나눠 보낸다
+      const s = Math.min(FLUSH_STEP_CHUNK, Math.floor(pendingSteps.current / 100) * 100);
+      const t = Math.min(3000, Math.floor(pendingTouches.current / 100) * 100);
       if (s === 0 && t === 0) return;
       pendingSteps.current -= s;
       pendingTouches.current -= t;

@@ -354,31 +354,6 @@ export function EmptySeat({ onInvite, showCta }: { onInvite: () => void; showCta
   );
 }
 
-/* ── 선생님 NPC (혼자일 때) ──────────────────────── */
-
-export function TeacherSeat() {
-  const sway = useLoop(true, v => Animated.sequence([
-    Animated.timing(v, { toValue: 1, duration: 2100, easing: Easing.inOut(Easing.quad), useNativeDriver: false }),
-    Animated.timing(v, { toValue: 0, duration: 2100, easing: Easing.inOut(Easing.quad), useNativeDriver: false }),
-  ]));
-  return (
-    <View style={st.teacherWrap} testID="teacher-npc">
-      <Animated.View style={{
-        transform: [{ rotate: sway.interpolate({ inputRange: [0, 1], outputRange: ['-2deg', '2deg'] }) }],
-      }}>
-        <CatBody size={86} color="cream" glasses neckId="neck_bowtie" />
-      </Animated.View>
-      <View style={st.podium}>
-        <View style={st.podiumTop}><Text style={{ fontSize: 14 }}>📖</Text></View>
-        <View style={st.podiumFront} />
-      </View>
-      <View style={st.namePlate}>
-        <Text style={st.nameText}>선생님</Text>
-      </View>
-    </View>
-  );
-}
-
 const st = StyleSheet.create({
   cell: { width: '50%', alignItems: 'center', paddingVertical: 6 },
   counterRow: { height: 24, justifyContent: 'flex-end', marginBottom: 1 },
@@ -433,16 +408,4 @@ const st = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.35)',
   },
   inviteText: { fontSize: 12, fontWeight: '700', color: T.sub, textAlign: 'center', lineHeight: 17 },
-
-  teacherWrap: { alignItems: 'center', marginBottom: 4 },
-  podium: { width: 96, marginTop: -14 },
-  podiumTop: {
-    height: 14, borderRadius: 4, backgroundColor: '#9A6A38',
-    borderWidth: 1.5, borderColor: 'rgba(74,50,34,0.5)',
-    alignItems: 'center',
-  },
-  podiumFront: {
-    height: 30, marginHorizontal: 5, backgroundColor: '#7C5128',
-    borderBottomLeftRadius: 4, borderBottomRightRadius: 4,
-  },
 });

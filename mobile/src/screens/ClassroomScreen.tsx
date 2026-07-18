@@ -8,7 +8,7 @@ import type { Backend } from '../backend/types';
 import type { Activity } from '../activity/useActivity';
 import type { Member, PatEntry, Profile } from '../types';
 import { T } from '../theme';
-import { EmptySeat, SeatCell, TeacherSeat } from '../components/Seat';
+import { EmptySeat, SeatCell } from '../components/Seat';
 import { showToast } from '../components/ui';
 import { PatBoxSheet } from './PatBoxSheet';
 import { SettingsSheet } from './SettingsSheet';
@@ -112,7 +112,6 @@ export function ClassroomScreen({
   const openPats = () => { setSheet('pats'); setUnread(0); };
 
   const me = members.find(m => m.isMe);
-  const alone = members.length <= 1;
   const seats: (Member | 'invite' | 'empty')[] = [...members];
   while (seats.length < 8) seats.push(seats.length === members.length ? 'invite' : 'empty');
 
@@ -147,7 +146,6 @@ export function ClassroomScreen({
 
       {/* 교실 */}
       <ScrollView style={{ flex: 1 }} contentContainerStyle={s.floorPad} showsVerticalScrollIndicator={false}>
-        {alone && <TeacherSeat />}
         {/* 나무 바닥 패널 — 책상들이 허공에 뜨지 않게 접지 */}
         <View style={s.floorPanel}>
           {[0, 1, 2, 3].map(i => (
