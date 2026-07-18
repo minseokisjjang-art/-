@@ -126,15 +126,19 @@ alter table items             enable row level security;
 alter table inventory         enable row level security;
 
 -- profiles: 본인 전체, 같은 교실 멤버는 읽기만
-create policy profiles_self   on profiles for all    using (id = auth.uid()) with check (id = auth.uid());
-create policy profiles_mates  on profiles for select using (same_classroom(id, auth.uid()));
+drop policy if exists profiles_self on profiles;
+create policy profiles_self on profiles for all    using (id = auth.uid()) with check (id = auth.uid());
+drop policy if exists profiles_mates on profiles;
+create policy profiles_mates on profiles for select using (same_classroom(id, auth.uid()));
 
 -- classrooms: 멤버만 읽기 (코드로 찾기는 RPC 내부에서만 — 코드 무차별 대입 차단)
+drop policy if exists classrooms_member on classrooms;
 create policy classrooms_member on classrooms for select using (
   exists (select 1 from classroom_members where classroom_id = id and profile_id = auth.uid())
 );
 
 -- classroom_members: 같은 교실 멤버끼리 읽기. 입장/퇴장은 RPC로만
+drop policy if exists members_read on classroom_members;
 create policy members_read on classroom_members for select using (
   exists (select 1 from classroom_members me
           where me.classroom_id = classroom_members.classroom_id
@@ -143,23 +147,30 @@ create policy members_read on classroom_members for select using (
 
 -- presence: 본인 전체 + (상태 공개 중인) 같은 교실 멤버 읽기
 --   ⚠ share_status=false 차단은 서버 정책(여기)이 담당 — 클라이언트에서 숨기지 않는다
-create policy presence_self  on presence for all    using (profile_id = auth.uid()) with check (profile_id = auth.uid());
+drop policy if exists presence_self on presence;
+create policy presence_self on presence for all    using (profile_id = auth.uid()) with check (profile_id = auth.uid());
+drop policy if exists presence_mates on presence;
 create policy presence_mates on presence for select using (
   same_classroom(profile_id, auth.uid())
   and exists (select 1 from profiles p where p.id = presence.profile_id and p.share_status = true)
 );
 
 -- pats: 받은 사람만 읽기 (무영수증 — 보낸 사람도 자기 기록을 다시 볼 수 없음), 쓰기는 RPC로만
+drop policy if exists pats_read_mine on pats;
 create policy pats_read_mine on pats for select using (to_profile = auth.uid());
 
 -- wallets: 본인만
+drop policy if exists wallets_self on wallets;
 create policy wallets_self on wallets for select using (profile_id = auth.uid());
 
 -- items: 모두 읽기
+drop policy if exists items_read on items;
 create policy items_read on items for select using (true);
 
 -- inventory: 본인 전체 + 같은 교실 멤버의 '착용 중' 아이템만 읽기 (교실 렌더링용)
-create policy inventory_self  on inventory for select using (profile_id = auth.uid());
+drop policy if exists inventory_self on inventory;
+create policy inventory_self on inventory for select using (profile_id = auth.uid());
+drop policy if exists inventory_mates on inventory;
 create policy inventory_mates on inventory for select using (
   equipped = true and same_classroom(profile_id, auth.uid())
 );
@@ -398,7 +409,15 @@ returns json language sql stable security definer set search_path = public as $$
 $$;
 
 -- ── Realtime 발행 ───────────────────────────────────────────────
-alter publication supabase_realtime add table presence;
-alter publication supabase_realtime add table pats;
-alter publication supabase_realtime add table inventory;
-alter publication supabase_realtime add table classroom_members;
+do $$ begin
+  alter publication supabase_realtime add table presence;
+exception when duplicate_object then null; end $$;
+do $$ begin
+  alter publication supabase_realtime add table pats;
+exception when duplicate_object then null; end $$;
+do $$ begin
+  alter publication supabase_realtime add table inventory;
+exception when duplicate_object then null; end $$;
+do $$ begin
+  alter publication supabase_realtime add table classroom_members;
+exception when duplicate_object then null; end $$;

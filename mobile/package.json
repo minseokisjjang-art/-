@@ -24,11 +24,15 @@
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "setup": "node scripts/setup.mjs",
+    "build:android": "npx eas-cli build --profile preview --platform android",
+    "build:dev": "npx eas-cli build --profile development --platform android"
   },
   "private": true,
   "devDependencies": {
     "@types/react": "^19.2.17",
+    "pg": "^8.22.0",
     "typescript": "^6.0.3"
   }
 }
