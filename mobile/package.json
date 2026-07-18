@@ -4,14 +4,20 @@
   "main": "index.js",
   "dependencies": {
     "@react-native-async-storage/async-storage": "^2.2.0",
+    "@supabase/supabase-js": "^2.110.7",
     "expo": "~57.0.4",
+    "expo-build-properties": "~57.0.3",
+    "expo-clipboard": "~57.0.0",
+    "expo-haptics": "~57.0.0",
     "expo-keep-awake": "~57.0.0",
     "expo-sensors": "~57.0.1",
     "expo-status-bar": "~57.0.0",
     "react": "19.2.3",
     "react-dom": "^19.2.3",
     "react-native": "0.86.0",
+    "react-native-health-connect": "^3.5.3",
     "react-native-svg": "^15.15.4",
+    "react-native-url-polyfill": "^4.0.0",
     "react-native-web": "^0.21.2"
   },
   "scripts": {
@@ -20,5 +26,9 @@
     "ios": "expo start --ios",
     "web": "expo start --web"
   },
-  "private": true
+  "private": true,
+  "devDependencies": {
+    "@types/react": "^19.2.17",
+    "typescript": "^6.0.3"
+  }
 }

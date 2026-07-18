@@ -1,21 +1,25 @@
 {
   "expo": {
-    "name": "고양이 마당",
-    "slug": "cat-yard",
+    "name": "잘지냥",
+    "slug": "jaljinyang",
     "version": "0.1.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
-      "supportsTablet": true,
+      "supportsTablet": false,
       "infoPlist": {
-        "NSMotionUsageDescription": "걸음 수에 따라 고양이가 움직이기 위해 모션 데이터를 사용합니다."
+        "NSMotionUsageDescription": "걸음이 감지되면 고양이가 뛰어요. 정확한 걸음 수는 친구에게 공개되지 않아요."
       }
     },
     "android": {
-      "permissions": ["android.permission.ACTIVITY_RECOGNITION"],
+      "package": "com.jaljinyang.app",
+      "permissions": [
+        "android.permission.ACTIVITY_RECOGNITION",
+        "android.permission.health.READ_STEPS"
+      ],
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#F6EDDD",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
@@ -23,6 +27,17 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": [
+      "react-native-health-connect",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "minSdkVersion": 26
+          }
+        }
+      ]
+    ]
   }
 }
