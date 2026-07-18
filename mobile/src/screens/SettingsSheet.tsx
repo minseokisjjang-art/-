@@ -21,13 +21,22 @@ export async function restoreKeepAwake(): Promise<void> {
   } catch {}
 }
 
+const SENSOR_LABEL: Record<string, string> = {
+  'ios': '아이폰 센서 (하루 누적)',
+  'android-hc': 'Health Connect (하루 누적)',
+  'android-live': '기본 센서 (앱 사용 중만)',
+  'sim': '데모 모드',
+  'none': '연결 안 됨',
+};
+
 export function SettingsSheet({
-  visible, onClose, backend, profile, onProfileChanged, onLeft,
+  visible, onClose, backend, profile, onProfileChanged, onLeft, sensorKind,
 }: {
   visible: boolean; onClose: () => void;
   backend: Backend; profile: Profile;
   onProfileChanged: (p: Profile) => void;
   onLeft: () => void;
+  sensorKind?: string;
 }) {
   const [nickname, setNickname] = useState(profile.nickname);
   const [confirmLeave, setConfirmLeave] = useState(false);
@@ -162,6 +171,7 @@ export function SettingsSheet({
 
       <Text style={s.mode}>
         {backend.kind === 'supabase' ? '🌐 서버에 연결되어 있어요' : '📴 오프라인(로컬) 모드 — docs/SETUP-SUPABASE.md 참고'}
+        {sensorKind ? `  ·  👟 ${SENSOR_LABEL[sensorKind] ?? sensorKind}` : ''}
       </Text>
     </Sheet>
   );

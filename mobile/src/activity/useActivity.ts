@@ -17,8 +17,9 @@ import type { PresenceState } from '../types';
  */
 
 const WALK_WINDOW = 10 * 60 * 1000;
-const TOUCH_WINDOW = 5 * 60 * 1000;
-const JUDGE_EVERY = 15 * 1000;
+// 실기기 피드백 반영: 5분은 "안 만졌는데 계속 필기"로 느껴짐 → 30초로 단축 (봉고캣 즉각성)
+const TOUCH_WINDOW = 30 * 1000;
+const JUDGE_EVERY = 5 * 1000;
 const SEND_MIN_GAP = 60 * 1000;
 const STEP_POLL = 60 * 1000;
 const CATCHUP_MAX = 24 * 60 * 60 * 1000;   // 앱이 꺼져 있던 걸음 캐치업 상한 (24시간)
@@ -28,6 +29,8 @@ const LAST_SYNC_KEY = 'jjn-last-step-sync';
 export interface Activity {
   myState: Exclude<PresenceState, 'private'>;
   providerKind: StepProviderKind;
+  /** 서버 반영 전의 세션 활동(터치+걸음) — 카운터 즉시 반응용 */
+  pendingLive: number;
   recordTouch: () => void;
   /** 데모(웹) 전용 */
   addSimSteps: (n: number) => void;
@@ -37,6 +40,7 @@ export interface Activity {
 export function useActivity(backend: Backend, enabled: boolean): Activity {
   const [myState, setMyState] = useState<Exclude<PresenceState, 'private'>>('idle');
   const [providerKind, setProviderKind] = useState<StepProviderKind>('none');
+  const [pendingLive, setPendingLive] = useState(0);
 
   const provider = useRef<StepProvider | null>(null);
   const lastTouchAt = useRef(0);
@@ -51,17 +55,20 @@ export function useActivity(backend: Backend, enabled: boolean): Activity {
   const recordTouch = useCallback(() => {
     lastTouchAt.current = Date.now();
     pendingTouches.current += 1;
+    setPendingLive(v => v + 1);   // 카운터가 터치 즉시 톡 올라가게
   }, []);
 
   const addSimTouches = useCallback((n: number) => {
     lastTouchAt.current = Date.now();
     pendingTouches.current += n;
+    setPendingLive(v => v + n);
   }, []);
 
   const addSimSteps = useCallback((n: number) => {
     provider.current?.addSimSteps(n);
     pendingSteps.current += n;
     recentSteps.current += n;
+    setPendingLive(v => v + n);
   }, []);
 
   /* provider 준비 + 캐치업:
@@ -115,6 +122,7 @@ export function useActivity(backend: Backend, enabled: boolean): Activity {
       const delta = Math.max(0, n - lastObservedRecent.current);
       lastObservedRecent.current = n;
       pendingSteps.current += delta;
+      if (delta > 0) setPendingLive(v => v + delta);
       void AsyncStorage.setItem(LAST_SYNC_KEY, String(Date.now())).catch(() => {});
     };
     void poll();
@@ -174,6 +182,8 @@ export function useActivity(backend: Backend, enabled: boolean): Activity {
       pendingTouches.current -= t;
       try {
         await backend.recordActivity(s, t);
+        // 서버 총계에 반영됐으니 로컬 보정분에서 차감 (스냅샷 갱신과 자연스럽게 이어짐)
+        setPendingLive(v => Math.max(0, v - (s + t)));
       } catch {
         // 실패 시 되돌려서 다음에 재시도
         pendingSteps.current += s;
@@ -187,5 +197,5 @@ export function useActivity(backend: Backend, enabled: boolean): Activity {
     return () => { clearInterval(iv); sub.remove(); void flush(); };
   }, [enabled, backend]);
 
-  return { myState, providerKind, recordTouch, addSimSteps, addSimTouches };
+  return { myState, providerKind, pendingLive, recordTouch, addSimSteps, addSimTouches };
 }

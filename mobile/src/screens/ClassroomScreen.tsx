@@ -52,6 +52,12 @@ export function ClassroomScreen({
     ));
   }, [backend, activity.myState]);
 
+  /* 내 카운터 = 서버 총계 + 아직 서버에 안 보낸 세션 활동 (터치 즉시 반응) */
+  const withLiveCounter = (m: Member): Member =>
+    m.isMe && m.totalCount !== null
+      ? { ...m, totalCount: m.totalCount + activity.pendingLive }
+      : m;
+
   const refreshPats = useCallback(async (countUnread: boolean) => {
     const list = await backend.getPats();
     setPats(list);
@@ -158,7 +164,7 @@ export function ClassroomScreen({
               return (
                 <SeatCell
                   key={seat.id}
-                  member={seat}
+                  member={withLiveCounter(seat)}
                   onPat={seat.isMe ? undefined : pat}
                   patFeedback={seat.isMe ? null : patFeedback[seat.id]}
                   receivedPatPulse={seat.isMe ? receivedPulse : undefined}
@@ -187,6 +193,7 @@ export function ClassroomScreen({
         profile={profile}
         onProfileChanged={onProfileChanged}
         onLeft={() => { setSheet(null); onLeftClassroom(); }}
+        sensorKind={activity.providerKind}
       />
     </View>
   );

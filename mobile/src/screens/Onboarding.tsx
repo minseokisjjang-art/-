@@ -50,9 +50,15 @@ export function Onboarding({
   const askPermission = async () => {
     setBusy(true);
     try {
-      const p = await getStepProvider();
-      const ok = await p.requestPermission();
-      showToast(ok ? '걸음 준비 완료! 🐾' : '괜찮아요, 터치만으로도 살아있어요');
+      // 권한 창이 응답 없이 매달려도 온보딩이 멈추지 않게 12초 타임아웃
+      const ok = await Promise.race([
+        (async () => {
+          const p = await getStepProvider();
+          return p.requestPermission();
+        })(),
+        new Promise<boolean>(resolve => setTimeout(() => resolve(false), 12000)),
+      ]).catch(() => false);
+      showToast(ok ? '걸음 준비 완료! 🐾' : '지금은 터치만으로 시작해요 — 걸음은 나중에 다시 연결할 수 있어요');
     } finally {
       setBusy(false);
       await ensureProfile();
