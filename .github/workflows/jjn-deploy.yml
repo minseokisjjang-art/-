@@ -1,0 +1,90 @@
+name: 잘지냥 딸깍 배포
+
+# 사용법: GitHub 저장소 → Actions 탭 → "잘지냥 딸깍 배포" → Run workflow
+# 필요한 시크릿 (Settings → Secrets and variables → Actions):
+#   SUPABASE_ACCESS_TOKEN  — https://supabase.com/dashboard/account/tokens
+#   EXPO_TOKEN             — https://expo.dev/settings/access-tokens (APK 빌드용)
+
+on:
+  workflow_dispatch:
+    inputs:
+      skip_build:
+        description: 'APK 빌드 건너뛰기 (서버 설치만)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: ① Supabase 서버 설치 (프로젝트 생성/DB/익명 로그인/열쇠)
+        id: supa
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: node mobile/scripts/cloud-setup.mjs
+
+      - name: ② 앱에 서버 주소 심기 (eas.json)
+        env:
+          SUPA_URL: ${{ steps.supa.outputs.url }}
+          SUPA_ANON: ${{ steps.supa.outputs.anon }}
+        run: |
+          node -e "
+          const fs = require('fs');
+          const p = 'mobile/eas.json';
+          const j = JSON.parse(fs.readFileSync(p, 'utf8'));
+          const env = {
+            EXPO_PUBLIC_SUPABASE_URL: process.env.SUPA_URL,
+            EXPO_PUBLIC_SUPABASE_ANON_KEY: process.env.SUPA_ANON,
+          };
+          for (const prof of ['preview', 'development']) {
+            j.build[prof].env = { ...(j.build[prof].env || {}), ...env };
+          }
+          fs.writeFileSync(p, JSON.stringify(j, null, 2) + '\n');
+          console.log('eas.json에 서버 주소를 넣었어요');
+          "
+
+      - name: ③ 서버 주소를 저장소에 기록 (다음부터 재사용)
+        run: |
+          git config user.name "jaljinyang-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add mobile/eas.json
+          git diff --cached --quiet || git commit -m "chore: Supabase 연결 정보 자동 반영 [skip ci]"
+          git push || echo "푸시 생략(변경 없음 또는 권한 제한)"
+
+      - name: ④ 갤럭시용 APK 빌드 (EAS 클라우드)
+        if: ${{ !inputs.skip_build }}
+        working-directory: mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "❌ EXPO_TOKEN 시크릿이 없어요." >> $GITHUB_STEP_SUMMARY
+            echo "→ https://expo.dev/settings/access-tokens 에서 토큰을 만들고" >> $GITHUB_STEP_SUMMARY
+            echo "→ 저장소 Settings → Secrets → Actions에 EXPO_TOKEN으로 등록한 뒤 다시 실행해 주세요." >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+          npm ci
+          npx eas-cli@latest init --non-interactive --force
+          echo "빌드를 시작해요 (10~20분 걸려요)…"
+          npx eas-cli@latest build --profile preview --platform android --non-interactive --json > build.json \
+            || { echo '빌드 실패 로그:'; cat build.json; exit 1; }
+          echo "## 📱 갤럭시 설치 링크" >> $GITHUB_STEP_SUMMARY
+          node -e "
+          const b = require('./build.json');
+          const a = Array.isArray(b) ? b[0] : b;
+          const url = a?.artifacts?.buildUrl || a?.artifacts?.applicationArchiveUrl;
+          console.log(url ? url + '  ← 폰에서 이 주소를 열어 설치하세요' : '링크를 못 찾았어요 — https://expo.dev 대시보드의 Builds에서 확인하세요');
+          " >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "설치 후: 앱 실행 → 교실 만들기 → 초대코드를 친구에게! (친구도 같은 링크로 설치)" >> $GITHUB_STEP_SUMMARY
