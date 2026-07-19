@@ -8,10 +8,12 @@ import { CAT_COLORS, T } from '../theme';
 import { CatBody } from '../components/CatSvg';
 import { Button, Sheet, showToast } from '../components/ui';
 import { APP_VERSION } from '../version';
+import StepEngine from '../../modules/step-engine';
 
-/* 설정 — 닉네임/색, 상태·카운터 공개, 화면 항상 켜기, 교실 나가기 */
+/* 설정 — 닉네임/색, 상태·카운터 공개, 잠금화면 걸음, 화면 항상 켜기, 교실 나가기 */
 
 const AWAKE_KEY = 'jjn-keep-awake';
+const LOCK_SERVICE_KEY = 'jjn-lockscreen-service';
 
 /** 저장된 '화면 항상 켜기' 설정을 앱 시작 시 복원 */
 export async function restoreKeepAwake(): Promise<void> {
@@ -22,7 +24,18 @@ export async function restoreKeepAwake(): Promise<void> {
   } catch {}
 }
 
+/** 저장된 '잠금화면 걸음' 설정을 앱 시작 시 복원 (앱이 포그라운드일 때만 호출) */
+export async function restoreLockScreenService(): Promise<void> {
+  try {
+    if (!StepEngine) return;
+    if ((await AsyncStorage.getItem(LOCK_SERVICE_KEY)) === '1' && !StepEngine.isServiceRunning()) {
+      StepEngine.startLockScreenService();
+    }
+  } catch {}
+}
+
 const SENSOR_LABEL: Record<string, string> = {
+  'android-native': '걸음 칩 직접 연결 (삼성헬스 필요 없음)',
   'ios': '아이폰 센서 (하루 누적)',
   'android-hc': 'Health Connect (하루 누적)',
   'android-live': '기본 센서 (앱 사용 중만)',
@@ -43,10 +56,28 @@ export function SettingsSheet({
   const [nickname, setNickname] = useState(profile.nickname);
   const [confirmLeave, setConfirmLeave] = useState(false);
   const [keepAwake, setKeepAwake] = useState(false);
+  const [lockService, setLockService] = useState(false);
 
   useEffect(() => {
     void AsyncStorage.getItem(AWAKE_KEY).then(v => setKeepAwake(v === '1'));
+    try { setLockService(!!StepEngine?.isServiceRunning()); } catch {}
   }, []);
+
+  const toggleLockService = async (v: boolean) => {
+    if (!StepEngine) return;
+    setLockService(v);
+    try {
+      if (v) {
+        // 알림 권한(안드13+)이 없으면 알림이 안 보이므로 함께 요청
+        await StepEngine.requestPermissions().catch(() => null);
+        StepEngine.startLockScreenService();
+        showToast('이제 앱을 닫아도 잠금화면에서 걸음을 세요 🔒🐾');
+      } else {
+        StepEngine.stopLockScreenService();
+      }
+      await AsyncStorage.setItem(LOCK_SERVICE_KEY, v ? '1' : '0');
+    } catch {}
+  };
 
   const toggleAwake = async (v: boolean) => {
     setKeepAwake(v);
@@ -131,6 +162,25 @@ export function SettingsSheet({
           testID="set-share-counter"
         />
       </View>
+
+      {/* 잠금화면 걸음 서비스 (네이티브 걸음 엔진이 있는 빌드에서만) */}
+      {StepEngine && (
+        <View style={s.switchRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={s.switchTitle}>잠금화면 걸음 🔒🐾</Text>
+            <Text style={s.switchHint}>
+              앱을 닫아도 알림으로 오늘 걸음이 잠금화면에 떠요 (캐시워크 방식)
+            </Text>
+          </View>
+          <Switch
+            value={lockService}
+            onValueChange={v => { void toggleLockService(v); }}
+            trackColor={{ true: T.accent, false: '#D9D2C2' }}
+            thumbColor="#FFFFFF"
+            testID="set-lock-service"
+          />
+        </View>
+      )}
 
       {/* 걸음 다시 연결 */}
       {onReconnectSteps && (

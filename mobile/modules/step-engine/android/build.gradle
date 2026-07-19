@@ -1,0 +1,15 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'expo.modules.stepengine'
+version = '0.6.0'
+
+android {
+  namespace "expo.modules.stepengine"
+  defaultConfig {
+    versionCode 1
+    versionName "0.6.0"
+  }
+}

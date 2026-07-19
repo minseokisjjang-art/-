@@ -1,22 +1,29 @@
 import { Platform } from 'react-native';
 import { Pedometer } from 'expo-sensors';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import StepEngine, { StepEngineNative } from '../../modules/step-engine';
 
 /*
  * 걸음 데이터 공급자 — 플랫폼 분기를 이 모듈 하나로 감싼다.
  *
+ *  - android-native: ★기본★ 하드웨어 걸음 칩(TYPE_STEP_COUNTER)을 직접 읽는다.
+ *                    캐시워크와 같은 방식 — 삼성헬스/헬스커넥트 필요 없음.
+ *                    칩은 부팅 후부터 앱과 무관하게 누적 집계하므로, 앱을 닫았다
+ *                    열어도 그동안의 걸음이 누적값 차이로 그대로 적립된다.
  *  - ios:            expo-sensors Pedometer.getStepCountAsync (구간 조회 가능)
- *  - android-hc:     Health Connect(하루 누적·캐치업) + 기기 센서 실시간(즉각 반응) 하이브리드
- *                    ⚠ 삼성헬스→HC 동기화는 수 분 지연될 수 있어, 실시간 반응은 기기 센서가 담당
+ *  - android-hc:     폴백 — Health Connect + 기기 센서 하이브리드
  *  - android-live:   폴백 — 기기 센서만 (앱 실행 중 실시간)
  *  - sim:            웹/센서 없음 — 데모 버튼으로만 걸음 추가
  */
 
-export type StepProviderKind = 'ios' | 'android-hc' | 'android-live' | 'sim' | 'none';
+export type StepProviderKind = 'android-native' | 'ios' | 'android-hc' | 'android-live' | 'sim' | 'none';
 
 export interface StepProvider {
   kind: StepProviderKind;
   /** 최근 windowMs 동안의 걸음 수. 알 수 없으면 null */
   getRecentSteps(windowMs: number): Promise<number | null>;
+  /** 마지막 호출 이후 새 걸음(적립용). 누적 카운터 기반 공급자만 구현 */
+  takeCredit?(): Promise<number>;
   /** 데모 전용: 걸음 주입 (sim에서만 동작) */
   addSimSteps(n: number): void;
   /** 권한 요청 결과 */
@@ -88,7 +95,67 @@ function makeIosProvider(): StepProvider {
   };
 }
 
-/* ── Android: Health Connect + 기기 센서 하이브리드 ── */
+/* ── Android: 하드웨어 걸음 칩 직접 (캐시워크 방식) ── */
+
+const CUM_BASE_KEY = 'jjn-step-cum-base';
+
+function makeNativeProvider(engine: StepEngineNative): StepProvider {
+  // (시각, 칩 누적값) 샘플을 모아 최근 구간 걸음을 계산한다
+  let samples: { t: number; cum: number }[] = [];
+
+  const sample = async (): Promise<number | null> => {
+    const now = Date.now();
+    const last = samples[samples.length - 1];
+    if (last && now - last.t < 5000) return last.cum; // 5초 내 재호출은 재사용
+    const cum = await engine.getCumulativeSteps().catch(() => null);
+    if (cum === null || cum === undefined) return null;
+    if (last && cum < last.cum) samples = []; // 재부팅 — 칩이 0부터 다시 시작
+    samples.push({ t: now, cum });
+    samples = samples.filter(s => s.t > now - 70 * 60 * 1000);
+    return cum;
+  };
+
+  return {
+    kind: 'android-native',
+    async getRecentSteps(windowMs) {
+      const cur = await sample();
+      if (cur === null) return null;
+      const cutoff = Date.now() - windowMs;
+      // 창 시작 직전의 샘플이 기준점 — 없으면 창 안 첫 샘플(부분 구간)
+      let baseline = samples[0];
+      for (const s of samples) {
+        if (s.t <= cutoff) baseline = s;
+        else break;
+      }
+      return Math.max(0, Math.round(cur - baseline.cum));
+    },
+    async takeCredit() {
+      const cur = await sample();
+      if (cur === null) return 0;
+      try {
+        const raw = await AsyncStorage.getItem(CUM_BASE_KEY);
+        const base = raw === null ? null : parseFloat(raw);
+        await AsyncStorage.setItem(CUM_BASE_KEY, String(cur));
+        if (base === null || Number.isNaN(base)) return 0; // 첫 실행 — 기준점만 기록
+        if (cur >= base) return Math.floor(cur - base);
+        return Math.floor(cur); // 재부팅 — 부팅 후 걸음만 적립
+      } catch {
+        return 0;
+      }
+    },
+    addSimSteps() {},
+    async requestPermission() {
+      try {
+        const r = await engine.requestPermissions();
+        return !!r?.granted || r?.status === 'granted';
+      } catch {
+        return false;
+      }
+    },
+  };
+}
+
+/* ── Android 폴백: Health Connect + 기기 센서 하이브리드 ── */
 
 function makeHealthConnectProvider(hc: any): StepProvider {
   const live = makeLiveCounter();
@@ -195,7 +262,14 @@ export async function getStepProvider(): Promise<StepProvider> {
     return cached;
   }
 
-  // Android: Health Connect 우선, 실패 시 라이브 폴백
+  // Android: ① 걸음 칩 직접(캐시워크 방식) ② Health Connect ③ 라이브 ④ 데모
+  try {
+    if (StepEngine && StepEngine.hasStepSensor()) {
+      cached = makeNativeProvider(StepEngine);
+      return cached;
+    }
+  } catch {}
+
   try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const hc = require('react-native-health-connect');

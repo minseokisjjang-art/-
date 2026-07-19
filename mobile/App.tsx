@@ -9,7 +9,7 @@ import { CatBody } from './src/components/CatSvg';
 import { ToastHost } from './src/components/ui';
 import { Onboarding } from './src/screens/Onboarding';
 import { ClassroomScreen } from './src/screens/ClassroomScreen';
-import { restoreKeepAwake } from './src/screens/SettingsSheet';
+import { restoreKeepAwake, restoreLockScreenService } from './src/screens/SettingsSheet';
 
 /*
  * 잘지냥 — 앱 루트.
@@ -31,6 +31,7 @@ export default function App() {
 
   useEffect(() => {
     void restoreKeepAwake();
+    void restoreLockScreenService();
     let alive = true;
     (async () => {
       try {

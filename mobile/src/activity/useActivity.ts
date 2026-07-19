@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getStepProvider, resetStepProvider, StepProvider, StepProviderKind } from './stepProvider';
+import StepEngine from '../../modules/step-engine';
 import type { Backend } from '../backend/types';
 import type { PresenceState } from '../types';
 
@@ -21,7 +22,9 @@ const WALK_WINDOW = 10 * 60 * 1000;
 const TOUCH_WINDOW = 30 * 1000;
 const JUDGE_EVERY = 5 * 1000;
 const SEND_MIN_GAP = 60 * 1000;
-const STEP_POLL = 60 * 1000;
+const STEP_POLL = 20 * 1000;               // 칩 직접 읽기는 가벼워서 20초 — 걷기 반응이 빨라짐
+const UNLOCK_TOUCH = 10;                   // 잠금해제(기척) 1회 = 터치 10 상당
+const UNLOCK_TOUCH_CAP = 500;              // 한 번에 적립되는 기척 상한
 const CATCHUP_MAX = 24 * 60 * 60 * 1000;   // 앱이 꺼져 있던 걸음 캐치업 상한 (24시간)
 const FLUSH_STEP_CHUNK = 2000;             // 서버 상식 상한과 동일 — 한 번에 이만큼씩만 전송
 const LAST_SYNC_KEY = 'jjn-last-step-sync';
@@ -135,6 +138,33 @@ export function useActivity(backend: Backend, enabled: boolean): Activity {
     const poll = async () => {
       const p = provider.current;
       if (!p || p.kind === 'sim') return; // sim은 addSimSteps가 직접 채움
+
+      // 잠금화면 서비스가 세어 둔 잠금해제(기척)를 터치로 적립
+      if (StepEngine) {
+        try {
+          const unlocks = StepEngine.takeUnlockCount();
+          if (unlocks > 0) {
+            const touches = Math.min(unlocks * UNLOCK_TOUCH, UNLOCK_TOUCH_CAP);
+            pendingTouches.current += touches;
+            setPendingLive(v => v + touches);
+          }
+        } catch {}
+      }
+
+      if (p.takeCredit) {
+        // 누적 칩 방식 — 마지막 조회 이후의 새 걸음(앱이 꺼져 있던 동안 포함)을 그대로 적립
+        const credited = await p.takeCredit().catch(() => 0);
+        if (!alive) return;
+        if (credited > 0) {
+          pendingSteps.current += credited;
+          setPendingLive(v => v + credited);
+        }
+        const recent = await p.getRecentSteps(WALK_WINDOW).catch(() => null);
+        if (!alive || recent === null) return;
+        recentSteps.current = recent;
+        return;
+      }
+
       const n = await p.getRecentSteps(WALK_WINDOW);
       if (!alive || n === null) return;
       recentSteps.current = n;
